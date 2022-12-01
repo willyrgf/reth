@@ -73,7 +73,6 @@ pub trait ThreadedChannelDB: StateProviderFactory {
                                 // wrapper
                             }
                         }
-                        todo!()
                     }
                     DatabaseRequest::MultiStorage(_addr, _slots) => {
                         todo!()

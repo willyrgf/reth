@@ -2,7 +2,7 @@
 //! Provider that wraps around database traits.
 //! to provide higher level abstraction over database tables.
 
-use crate::provider::{
+use reth_interfaces::provider::{
     db_provider::{StateProviderImplHistory, StateProviderImplLatest},
     threaded_db_requestor::{
         CacheAccountProvider, CacheStateProvider, DatabaseRequest, DatabaseResponse,
@@ -11,9 +11,8 @@ use crate::provider::{
     },
 };
 
-use crate::{
+use reth_interfaces::{
     db::{tables, Database, DatabaseGAT, DbTx},
-    error::Error,
     provider::{Error as ProviderError, StateProviderFactory},
     Result,
 };
@@ -149,7 +148,7 @@ impl CacheStateProvider for ThreadedCacheDB {
 }
 
 impl REVMDatabase for ThreadedCacheDB {
-    type Error = Error;
+    type Error = reth_interfaces::Error;
 
     fn block_hash(&mut self, number: U256) -> std::result::Result<H256, Self::Error> {
         if let Some(hash) = ThreadedChannelStateProvider::block_hash(self, number)? {
@@ -197,23 +196,32 @@ impl REVMDatabase for ThreadedCacheDB {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{
-        db::{tables, DBContainer, Database, DatabaseGAT, DbTx},
-        error::Error,
+
+    use crate::threaded_revm_wrap::ThreadedCacheDB;
+    use reth_interfaces::{
+        db::{tables::PlainAccountState, Database, DbTxMut},
         provider::{
-            threaded_db_provider::BasicThreadedDB, Error as ProviderError, StateProviderFactory,
+            threaded_db_provider::BasicThreadedDB, threaded_db_requestor::DatabaseResponse,
+            threaded_db_responder::ThreadedChannelDB, AccountProvider, StateProviderFactory,
         },
-        Result,
     };
-    use reth_db::{kv::*, mdbx::WriteMap};
-    use std::sync::mpsc::channel;
+    use reth_primitives::{Account, Address, H256, U256};
+    use revm::Database as REVMDatabase;
+    use std::{str::FromStr, sync::Mutex};
     use tempfile::TempDir;
 
-    #[test]
-    fn sanity_loader() {
-        let path = TempDir::new().expect(test_utils::ERROR_TEMPDIR).into_path();
-        let db = Arc::new(test_utils::create_test_db_with_path::<WriteMap>(EnvKind::RW, &path));
+    use std::sync::Arc;
+
+    use reth_db::mdbx::WriteMap;
+
+    use std::sync::mpsc::channel;
+
+    fn threaded_setup() -> (ThreadedCacheDB, BasicThreadedDB<reth_db::kv::Env<WriteMap>>) {
+        let path = TempDir::new().expect(reth_db::kv::test_utils::ERROR_TEMPDIR).into_path();
+        let db = Arc::new(reth_db::kv::test_utils::create_test_db_with_path::<WriteMap>(
+            reth_db::kv::EnvKind::RW,
+            &path,
+        ));
         let (request_sender, request_receiver) = channel();
         let (response_sender, response_receiver) = channel();
 
@@ -221,10 +229,114 @@ mod tests {
             Arc::new(Mutex::new(request_sender)),
             Arc::new(Mutex::new(response_receiver)),
         );
+
         let db_handle = BasicThreadedDB::new(
             db,
             Arc::new(Mutex::new(request_receiver)),
             Arc::new(Mutex::new(response_sender)),
         );
+
+        (cachedb, db_handle)
+    }
+
+    #[test]
+    fn sanity_loader() {
+        let (mut cachedb, mut db_handle) = threaded_setup();
+
+        let value = Account {
+            nonce: 18446744073709551615,
+            bytecode_hash: Some(H256::random()),
+            balance: U256::max_value(),
+        };
+
+        let key =
+            Address::from_str("0xa2c122be93b0074270ebee7f6b7292c7deb45047").expect("BAD PARSE");
+
+        {
+            // PUT
+            let result = db_handle.db.update(|tx| {
+                tx.put::<PlainAccountState>(key, value).expect("BAD PUT");
+                200
+            });
+            assert!(result.expect("BAD RETURN") == 200);
+        }
+
+        let _handler = std::thread::spawn(move || {
+            if let Err(e) = db_handle.run() {
+                panic!("db panicked: {:?}", e);
+            }
+        });
+
+        let a = cachedb.basic(key).unwrap().unwrap();
+        assert!(a.balance == value.balance);
+        assert!(a.nonce == value.nonce);
+        assert!(a.code_hash == value.bytecode_hash.unwrap());
+    }
+
+    #[test]
+    fn out_of_order_processes_channel() {
+        let (mut cachedb, mut db_handle) = threaded_setup();
+
+        let value = Account {
+            nonce: 18446744073709551615,
+            bytecode_hash: Some(H256::random()),
+            balance: U256::max_value(),
+        };
+
+        let value2 =
+            Account { nonce: 1, bytecode_hash: Some(H256::random()), balance: U256::zero() };
+
+        let key =
+            Address::from_str("0xa2c122be93b0074270ebee7f6b7292c7deb45047").expect("BAD PARSE");
+
+        let key2 =
+            Address::from_str("0xb2c122be93b0074270ebee7f6b7292c7deb45048").expect("BAD PARSE");
+
+        {
+            // PUT
+            let result = db_handle.db.update(|tx| {
+                tx.put::<PlainAccountState>(key, value).expect("BAD PUT");
+                200
+            });
+            assert!(result.expect("BAD RETURN") == 200);
+
+            let result = db_handle.db.update(|tx| {
+                tx.put::<PlainAccountState>(key2, value2).expect("BAD PUT");
+                200
+            });
+            assert!(result.expect("BAD RETURN") == 200);
+        }
+
+        // send a supurious response to the requestor without them asking for it
+        {
+            let response_sender = db_handle.response_sender();
+            let response_sender = response_sender.lock().unwrap();
+            let basic = db_handle.latest().unwrap().basic_account(key2);
+            match basic {
+                Ok(maybe_db_acct_info) => {
+                    response_sender.send(DatabaseResponse::Basic(key2, maybe_db_acct_info)).unwrap()
+                }
+                Err(_e) => {}
+            }
+        }
+
+        // run the db indefinitely
+        let _handler = std::thread::spawn(move || {
+            if let Err(e) = db_handle.run() {
+                panic!("db panicked: {:?}", e);
+            }
+        });
+
+        // ask for the first account's info, this should send a request to the db_handle
+        let a = cachedb.basic(key).unwrap().unwrap();
+        assert!(a.balance == value.balance);
+        assert!(a.nonce == value.nonce);
+        assert!(a.code_hash == value.bytecode_hash.unwrap());
+        // as for the second account's info, this *should'nt* send a request to the db handle and
+        // should have been cached when we processed it
+        let b = cachedb.basic(key2).unwrap().unwrap();
+        assert!(b.balance == value2.balance);
+        assert!(b.nonce == value2.nonce);
+        assert!(b.code_hash == value2.bytecode_hash.unwrap());
     }
 }

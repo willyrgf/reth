@@ -12,4 +12,6 @@ pub mod config;
 pub mod executor;
 /// Wrapper around revm database and types
 pub mod revm_wrap;
+/// A threaded version of revm_wrap
+pub mod threaded_revm_wrap;
 pub use config::Config;

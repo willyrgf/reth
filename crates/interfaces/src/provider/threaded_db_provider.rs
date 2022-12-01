@@ -21,7 +21,7 @@ use std::sync::{
 /// Provider
 pub struct BasicThreadedDB<DB: Database> {
     /// Database
-    db: Arc<DB>,
+    pub db: Arc<DB>,
     request_receiver: Arc<Mutex<Receiver<DatabaseRequest<MAX_PREFETCH>>>>,
     response_sender: Arc<Mutex<Sender<DatabaseResponse<MAX_PREFETCH>>>>,
 }
