@@ -1,9 +1,9 @@
 mod block;
 pub mod db_provider;
 mod error;
-mod state;
-mod predict_state;
 mod pipelined_in_mem_db;
+mod predict_state;
+mod state;
 
 pub mod threaded_cache_db;
 pub mod threaded_db_provider;

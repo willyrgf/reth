@@ -3323,6 +3323,7 @@ dependencies = [
  "revm",
  "secp256k1",
  "serde",
+ "tempfile",
  "test-fuzz",
  "thiserror",
  "tokio",

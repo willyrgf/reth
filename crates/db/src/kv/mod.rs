@@ -137,10 +137,6 @@ pub mod test_utils {
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::decode_value;
-use reth_interfaces::db::Encode;
-    use reth_interfaces::db::{Decompress, Compress};
-
     use super::{test_utils, Env, EnvKind};
     use reth_interfaces::{
         db::{

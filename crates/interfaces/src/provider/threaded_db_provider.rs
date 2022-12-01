@@ -2,20 +2,21 @@
 //! Provider that wraps around database traits.
 //! to provide higher level abstraction over database tables.
 
-use crate::provider::db_provider::StateProviderImplLatest;
-use crate::provider::db_provider::StateProviderImplHistory;
-use crate::provider::threaded_db_responder::ThreadedChannelDB;
-use crate::provider::threaded_db_requestor::{MAX_PREFETCH, DatabaseResponse, DatabaseRequest};
-use std::sync::{Mutex, mpsc::{Receiver, Sender}, Arc};
 use crate::{
     db::{tables, Database, DatabaseGAT, DbTx},
-    provider::{Error, StateProviderFactory},
+    provider::{
+        db_provider::{StateProviderImplHistory, StateProviderImplLatest},
+        threaded_db_requestor::{DatabaseRequest, DatabaseResponse, MAX_PREFETCH},
+        threaded_db_responder::ThreadedChannelDB,
+        Error, StateProviderFactory,
+    },
     Result,
 };
-use reth_primitives::{
-    BlockHash, BlockNumber,
+use reth_primitives::{BlockHash, BlockNumber};
+use std::sync::{
+    mpsc::{Receiver, Sender},
+    Arc, Mutex,
 };
-
 
 /// Provider
 pub struct BasicThreadedDB<DB: Database> {
@@ -32,11 +33,7 @@ impl<DB: Database> BasicThreadedDB<DB> {
         request_receiver: Arc<Mutex<Receiver<DatabaseRequest<MAX_PREFETCH>>>>,
         response_sender: Arc<Mutex<Sender<DatabaseResponse<MAX_PREFETCH>>>>,
     ) -> Self {
-        Self {
-            db,
-            request_receiver,
-            response_sender,
-        }
+        Self { db, request_receiver, response_sender }
     }
 }
 
@@ -44,7 +41,7 @@ impl<DB: Database> ThreadedChannelDB for BasicThreadedDB<DB> {
     fn request_receiver(&mut self) -> Arc<Mutex<Receiver<DatabaseRequest<MAX_PREFETCH>>>> {
         self.request_receiver.clone()
     }
-    
+
     fn response_sender(&mut self) -> Arc<Mutex<Sender<DatabaseResponse<MAX_PREFETCH>>>> {
         self.response_sender.clone()
     }

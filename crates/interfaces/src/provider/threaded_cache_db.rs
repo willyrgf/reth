@@ -2,31 +2,35 @@
 //! Provider that wraps around database traits.
 //! to provide higher level abstraction over database tables.
 
-use crate::provider::threaded_db_requestor::ThreadedChannelAccountProvider;
-use crate::provider::threaded_db_requestor::ThreadedChannelAccountRequestor;
-use crate::provider::threaded_db_requestor::ThreadedChannelStateRequestor;
-use crate::provider::threaded_db_requestor::CacheStateProvider;
-use crate::provider::threaded_db_requestor::CacheAccountProvider;
-use crate::provider::threaded_db_requestor::ThreadedChannelStateProvider;
-use crate::provider::db_provider::StateProviderImplLatest;
-use crate::provider::db_provider::StateProviderImplHistory;
-use crate::provider::threaded_db_requestor::{ThreadedChannelRequestor, MAX_PREFETCH, DatabaseResponse, DatabaseRequest};
+use crate::provider::{
+    db_provider::{StateProviderImplHistory, StateProviderImplLatest},
+    threaded_db_requestor::{
+        CacheAccountProvider, CacheStateProvider, DatabaseRequest, DatabaseResponse,
+        ThreadedChannelAccountProvider, ThreadedChannelAccountRequestor, ThreadedChannelRequestor,
+        ThreadedChannelStateProvider, ThreadedChannelStateRequestor, MAX_PREFETCH,
+    },
+};
 
 use crate::{
-    error::Error,
     db::{tables, Database, DatabaseGAT, DbTx},
+    error::Error,
     provider::{Error as ProviderError, StateProviderFactory},
     Result,
 };
 use reth_primitives::{
-    BlockHash, BlockNumber, Address, H256, U256, Account, Log, StorageValue, StorageKey, Bytes, KECCAK_EMPTY, H160
+    Account, Address, BlockHash, BlockNumber, Bytes, Log, StorageKey, StorageValue, H160, H256,
+    KECCAK_EMPTY, U256,
 };
 
-use std::sync::{Mutex, mpsc::{Receiver, Sender}, Arc};
-use std::collections::BTreeMap;
 use hashbrown::HashMap as Map;
 use revm::{AccountInfo, Bytecode, Database as REVMDatabase};
-
+use std::{
+    collections::BTreeMap,
+    sync::{
+        mpsc::{Receiver, Sender},
+        Arc, Mutex,
+    },
+};
 
 #[derive(Debug, Clone)]
 pub struct ThreadedCacheDB {
@@ -36,7 +40,24 @@ pub struct ThreadedCacheDB {
     pub logs: Vec<Log>,
     pub block_hashes: Map<U256, H256>,
     pub request_sender: Arc<Mutex<Sender<DatabaseRequest<MAX_PREFETCH>>>>,
-    pub response_receiver: Arc<Mutex<Receiver<DatabaseResponse<MAX_PREFETCH>>>>
+    pub response_receiver: Arc<Mutex<Receiver<DatabaseResponse<MAX_PREFETCH>>>>,
+}
+
+impl ThreadedCacheDB {
+    pub fn new(
+        request_sender: Arc<Mutex<Sender<DatabaseRequest<MAX_PREFETCH>>>>,
+        response_receiver: Arc<Mutex<Receiver<DatabaseResponse<MAX_PREFETCH>>>>,
+    ) -> Self {
+        Self {
+            accounts: Default::default(),
+            storage: Default::default(),
+            contracts: Default::default(),
+            logs: Default::default(),
+            block_hashes: Default::default(),
+            request_sender,
+            response_receiver,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -50,10 +71,11 @@ pub enum AccountState {
     /// Before Spurious Dragon hardfork there were a difference between empty and not existing.
     /// And we are flaging it here.
     NotExisting,
-    /// EVM touched this account. For newer hardfork this means it can be clearead/removed from state.
+    /// EVM touched this account. For newer hardfork this means it can be clearead/removed from
+    /// state.
     Touched,
-    /// EVM cleared storage of this account, mostly by selfdestruct, we dont ask database for storage slots
-    /// and asume they are U256::ZERO
+    /// EVM cleared storage of this account, mostly by selfdestruct, we dont ask database for
+    /// storage slots and asume they are U256::ZERO
     StorageCleared,
     /// EVM didnt interacted with this account
     #[default]
@@ -64,7 +86,6 @@ impl ThreadedChannelAccountRequestor for ThreadedCacheDB {}
 impl ThreadedChannelStateRequestor for ThreadedCacheDB {}
 impl ThreadedChannelAccountProvider for ThreadedCacheDB {}
 impl ThreadedChannelStateProvider for ThreadedCacheDB {}
-
 
 impl ThreadedChannelRequestor for ThreadedCacheDB {
     fn request_sender(&mut self) -> Arc<Mutex<Sender<DatabaseRequest<MAX_PREFETCH>>>> {
@@ -78,23 +99,23 @@ impl ThreadedChannelRequestor for ThreadedCacheDB {
             DatabaseResponse::Basic(addr, maybe_acct) => {
                 let acct = self.accounts.entry(addr).or_default();
                 *acct = maybe_acct.unwrap_or_default();
-            },
+            }
             DatabaseResponse::Storage(addr, (key, maybe_value)) => {
                 let storage = self.storage.entry(addr).or_default();
                 storage.insert(key, maybe_value.unwrap_or_default());
-            },
+            }
             DatabaseResponse::BlockHash(num, maybe_hash) => {
                 self.block_hashes.insert(num, maybe_hash.unwrap_or_default());
-            },
+            }
             DatabaseResponse::BytecodeFromHash(hash, maybe_code) => {
                 self.contracts.insert(hash, maybe_code.unwrap_or_default());
-            },
+            }
             DatabaseResponse::MultiStorage(addr, vals) => {
                 let storage = self.storage.entry(addr).or_default();
                 vals.into_iter().for_each(|(key, val)| {
                     storage.insert(key, val.unwrap_or_default());
                 });
-            },
+            }
         }
     }
 }
@@ -126,8 +147,6 @@ impl CacheStateProvider for ThreadedCacheDB {
         self.block_hashes.get(&number).copied()
     }
 }
-
-
 
 impl REVMDatabase for ThreadedCacheDB {
     type Error = Error;
@@ -176,4 +195,36 @@ impl REVMDatabase for ThreadedCacheDB {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        db::{tables, DBContainer, Database, DatabaseGAT, DbTx},
+        error::Error,
+        provider::{
+            threaded_db_provider::BasicThreadedDB, Error as ProviderError, StateProviderFactory,
+        },
+        Result,
+    };
+    use reth_db::{kv::*, mdbx::WriteMap};
+    use std::sync::mpsc::channel;
+    use tempfile::TempDir;
 
+    #[test]
+    fn sanity_loader() {
+        let path = TempDir::new().expect(test_utils::ERROR_TEMPDIR).into_path();
+        let db = Arc::new(test_utils::create_test_db_with_path::<WriteMap>(EnvKind::RW, &path));
+        let (request_sender, request_receiver) = channel();
+        let (response_sender, response_receiver) = channel();
+
+        let cachedb = ThreadedCacheDB::new(
+            Arc::new(Mutex::new(request_sender)),
+            Arc::new(Mutex::new(response_receiver)),
+        );
+        let db_handle = BasicThreadedDB::new(
+            db,
+            Arc::new(Mutex::new(request_receiver)),
+            Arc::new(Mutex::new(response_sender)),
+        );
+    }
+}

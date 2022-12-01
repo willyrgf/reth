@@ -1,6 +1,5 @@
 //! Declaration of all Database tables.
 
-use reth_primitives::StorageKey;
 use crate::db::{
     models::{
         accounts::{AccountBeforeTx, TxNumberAddress},
@@ -11,7 +10,7 @@ use crate::db::{
 };
 use reth_primitives::{
     Account, Address, BlockHash, BlockNumber, Header, IntegerList, Receipt, StorageEntry,
-    TransactionSigned, TxNumber, H256,
+    StorageKey, TransactionSigned, TxNumber, H256,
 };
 
 /// Enum for the types of tables present in libmdbx.

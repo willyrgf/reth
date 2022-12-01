@@ -16,8 +16,8 @@
 // /// Memory backend, storing all state values in a `Map` in memory.
 // #[derive(Debug)]
 // pub(crate) struct PipelinedCacheDB {
-//     /// Account info where None means it is not existing. Not existing state is needed for Pre TANGERINE forks.
-//     /// `code` is always `None`, and bytecode can be found in `contracts`.
+//     /// Account info where None means it is not existing. Not existing state is needed for Pre
+// TANGERINE forks.     /// `code` is always `None`, and bytecode can be found in `contracts`.
 //     pub(crate) accounts: Map<H160, DbAccount>,
 //     /// Contracts in the cache
 //     pub(crate) contracts: Map<H256, Bytecode>,
@@ -85,21 +85,15 @@
 //     /// Before Spurious Dragon hardfork there were a difference between empty and not existing.
 //     /// And we are flaging it here.
 //     NotExisting,
-//     /// EVM touched this account. For newer hardfork this means it can be clearead/removed from state.
-//     Touched,
-//     /// EVM cleared storage of this account, mostly by selfdestruct, we dont ask database for storage slots
-//     /// and asume they are U256::ZERO
+//     /// EVM touched this account. For newer hardfork this means it can be clearead/removed from
+// state.     Touched,
+//     /// EVM cleared storage of this account, mostly by selfdestruct, we dont ask database for
+// storage slots     /// and asume they are U256::ZERO
 //     StorageCleared,
 //     /// EVM didnt interacted with this account
 //     #[default]
 //     None,
 // }
-
-
-
-
-
-
 
 // // pub(crate) enum DatabaseRequest {
 // //     Basic(Address),
@@ -115,8 +109,8 @@
 // // }
 
 // // impl PipelinedCacheDB {
-// //     pub(crate) fn new(db_requestor: Sender<DatabaseRequest>, db_receiver: Receiver<DatabaseResponse>) -> Self {
-// //         let mut contracts = Map::new();
+// //     pub(crate) fn new(db_requestor: Sender<DatabaseRequest>, db_receiver:
+// Receiver<DatabaseResponse>) -> Self { //         let mut contracts = Map::new();
 // //         contracts.insert(KECCAK_EMPTY, Bytecode::new());
 // //         contracts.insert(H256::zero(), Bytecode::new());
 // //         Self {
@@ -187,10 +181,10 @@
 // //         self.request_basic_or_insert_default(address)
 // //     }
 
-// //     pub(crate) fn request_basic_or_insert_default(&mut self, address: H160) -> Result<&mut DbAccount, RecvError> {
-// //         self.db_requestor.send(DatabaseRequest::Basic(address)).expect("BAD SEND");
-// //         match self.db_receiver.recv()? {
-// //             DatabaseResponse::Basic(db_addr, db_info) => {
+// //     pub(crate) fn request_basic_or_insert_default(&mut self, address: H160) -> Result<&mut
+// DbAccount, RecvError> { //
+// self.db_requestor.send(DatabaseRequest::Basic(address)).expect("BAD SEND"); //         match
+// self.db_receiver.recv()? { //             DatabaseResponse::Basic(db_addr, db_info) => {
 // //                 assert_eq!(db_addr, address);
 // //                 match db_info {
 // //                     Some(db_info) => {
@@ -213,7 +207,7 @@
 // //                         }
 // //                     }
 // //                 }
-                
+
 // //             }
 // //             e => panic!("Got unexpected response from db: {:?}", e),
 // //         }
@@ -356,8 +350,8 @@
 // //             Entry::Occupied(entry) => Ok(entry.get().clone()),
 // //             Entry::Vacant(entry) => {
 // //                 Err(RecvError)
-// //                 // if you return code bytes when basic fn is called this function is not needed.
-// //                 // Ok(entry.insert(self.db.code_by_hash(code_hash)?).clone())
+// //                 // if you return code bytes when basic fn is called this function is not
+// needed. //                 // Ok(entry.insert(self.db.code_by_hash(code_hash)?).clone())
 // //             }
 // //         }
 // //     }
