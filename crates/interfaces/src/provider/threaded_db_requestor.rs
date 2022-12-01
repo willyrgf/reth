@@ -264,15 +264,12 @@ pub trait ThreadedChannelAccountProvider:
         if let Some(cached) = CacheAccountProvider::basic_account(self, address) {
             Ok(Some(cached))
         } else {
-            // empty out buffer and add to cache. ideally we wouldn't allocate here but lifetimes
-            // are annoying
+            // empty out buffer and add to cache
             {
                 let receiver = self.response_receiver();
                 let receiver = receiver.lock().unwrap();
                 receiver
                     .try_iter()
-                    .collect::<Vec<DatabaseResponse<MAX_PREFETCH>>>()
-                    .into_iter()
                     .for_each(|resp| self.cache_response(resp));
             }
             // recheck cache (ideally we stop early in handle_response)
@@ -298,15 +295,12 @@ pub trait ThreadedChannelStateProvider:
         if let Some(cached) = CacheStateProvider::storage(self, account, storage_key) {
             Ok(Some(cached))
         } else {
-            // empty out buffer and add to cache. ideally we wouldn't allocate here but lifetimes
-            // are annoying
+            // empty out buffer and add to cache.
             {
                 let receiver = self.response_receiver();
                 let receiver = receiver.lock().unwrap();
                 receiver
                     .try_iter()
-                    .collect::<Vec<DatabaseResponse<MAX_PREFETCH>>>()
-                    .into_iter()
                     .for_each(|resp| self.cache_response(resp));
             }
             // recheck cache (ideally we stop early in handle_response)
@@ -323,15 +317,12 @@ pub trait ThreadedChannelStateProvider:
         if let Some(cached) = CacheStateProvider::bytecode_by_hash(self, code_hash) {
             Ok(Some(cached))
         } else {
-            // empty out buffer and add to cache. ideally we wouldn't allocate here but lifetimes
-            // are annoying
+            // empty out buffer and add to cache.
             {
                 let receiver = self.response_receiver();
                 let receiver = receiver.lock().unwrap();
                 receiver
                     .try_iter()
-                    .collect::<Vec<DatabaseResponse<MAX_PREFETCH>>>()
-                    .into_iter()
                     .for_each(|resp| self.cache_response(resp));
             }
             // recheck cache (ideally we stop early in handle_response)
@@ -348,15 +339,12 @@ pub trait ThreadedChannelStateProvider:
         if let Some(cached) = CacheStateProvider::block_hash(self, number) {
             Ok(Some(cached))
         } else {
-            // empty out buffer and add to cache. ideally we wouldn't allocate here but lifetimes
-            // are annoying
+            // empty out buffer and add to cache.
             {
                 let receiver = self.response_receiver();
                 let receiver = receiver.lock().unwrap();
                 receiver
                     .try_iter()
-                    .collect::<Vec<DatabaseResponse<MAX_PREFETCH>>>()
-                    .into_iter()
                     .for_each(|resp| self.cache_response(resp));
             }
             // recheck cache (ideally we stop early in handle_response)
