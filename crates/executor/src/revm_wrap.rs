@@ -54,10 +54,7 @@ impl<DB: StateProvider> DatabaseRef for State<DB> {
     }
 
     fn storage(&self, address: H160, index: U256) -> Result<U256, Self::Error> {
-        let mut h_index = H256::zero();
-        index.to_big_endian(h_index.as_bytes_mut());
-
-        Ok(self.0.storage(address, h_index)?.unwrap_or_default())
+        Ok(self.0.storage(address, index)?.unwrap_or_default())
     }
 
     fn block_hash(&self, number: U256) -> Result<H256, Self::Error> {

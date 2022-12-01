@@ -64,7 +64,7 @@ pub type TxNumber = u64;
 /// Chain identifier type (introduced in EIP-155).
 pub type ChainId = u64;
 /// An account storage key.
-pub type StorageKey = H256;
+pub type StorageKey = U256;
 /// An account storage value.
 pub type StorageValue = U256;
 

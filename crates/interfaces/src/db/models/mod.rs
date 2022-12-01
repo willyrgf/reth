@@ -7,7 +7,7 @@ pub mod sharded_key;
 
 pub use accounts::*;
 pub use blocks::*;
-use reth_primitives::{Address, H256};
+use reth_primitives::{Address, H256, U256};
 pub use sharded_key::ShardedKey;
 
 use crate::db::{
@@ -80,5 +80,21 @@ impl Encode for H256 {
 impl Decode for H256 {
     fn decode<B: Into<bytes::Bytes>>(value: B) -> Result<Self, Error> {
         Ok(H256::from_slice(&value.into()[..]))
+    }
+}
+
+impl Encode for U256 {
+    type Encoded = [u8; 32];
+
+    fn encode(self) -> Self::Encoded {
+        let mut bytes = [0u8; 32];
+        self.to_big_endian(&mut bytes);
+        bytes
+    }
+}
+
+impl Decode for U256 {
+    fn decode<B: Into<bytes::Bytes>>(value: B) -> Result<Self, Error> {
+        Ok(U256::from_big_endian(&value.into()[..]))
     }
 }

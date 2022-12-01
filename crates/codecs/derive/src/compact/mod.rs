@@ -130,7 +130,7 @@ pub fn get_bit_size(ftype: &str) -> u8 {
         return 2
     } else if ftype == "bool" || ftype == "Option" {
         return 1
-    } else if ftype == "U256" {
+    } else if ftype == "U256" || ftype == "StorageKey" || ftype == "StorageValue" {
         return 6
     }
     0

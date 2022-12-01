@@ -10,4 +10,11 @@ pub enum Error {
     BlockTxNumberNotExists { block_hash: BlockHash },
     #[error("Block hash {block_hash:?} does not exists in Headers table")]
     BlockHashNotExist { block_hash: BlockHash },
+
+    #[error("The provider channel received a different kind of DatabaseResponse than expected")]
+    ChannelResponseMismatch,
+    #[error("Bad send to db via channel")]
+    BadChannelSend,
+    #[error("Bad receive from db via channel")]
+    BadChannelRecv,
 }

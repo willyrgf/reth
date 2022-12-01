@@ -137,6 +137,10 @@ pub mod test_utils {
 
 #[cfg(test)]
 mod tests {
+    use crate::utils::decode_value;
+use reth_interfaces::db::Encode;
+    use reth_interfaces::db::{Decompress, Compress};
+
     use super::{test_utils, Env, EnvKind};
     use reth_interfaces::{
         db::{
@@ -252,12 +256,12 @@ mod tests {
             .unwrap();
 
         // PUT (2,2)
-        let value22 = StorageEntry { key: H256::from_low_u64_be(2), value: U256::from(2) };
+        let value22 = StorageEntry { key: U256::from(2), value: U256::from(2) };
         env.update(|tx| tx.put::<PlainStorageState>(key, value22.clone()).expect(ERROR_PUT))
             .unwrap();
 
         // PUT (1,1)
-        let value11 = StorageEntry { key: H256::from_low_u64_be(1), value: U256::from(1) };
+        let value11 = StorageEntry { key: U256::from(1), value: U256::from(1) };
         env.update(|tx| tx.put::<PlainStorageState>(key, value11.clone()).expect(ERROR_PUT))
             .unwrap();
 
@@ -276,7 +280,7 @@ mod tests {
         {
             let tx = env.tx().expect(ERROR_INIT_TX);
             let mut cursor = tx.cursor_dup::<PlainStorageState>().unwrap();
-            let mut walker = cursor.walk_dup(key, H256::from_low_u64_be(1)).unwrap();
+            let mut walker = cursor.walk_dup(key, U256::from(1)).unwrap();
             assert_eq!(
                 value11,
                 walker

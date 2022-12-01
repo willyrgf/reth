@@ -1,5 +1,6 @@
 //! Declaration of all Database tables.
 
+use reth_primitives::StorageKey;
 use crate::db::{
     models::{
         accounts::{AccountBeforeTx, TxNumberAddress},
@@ -50,7 +51,7 @@ pub const TABLES: [(TableType, &str); 20] = [
 /// Macro to declare all necessary tables.
 macro_rules! table {
     (
-    $(#[$docs:meta])+ $name:ident => $key:ty => $value:ty => $seek:ty) => {
+    $(#[$docs:meta])+ $name:ident => $key:ty => $value:ty) => {
         $(#[$docs])+
         ///
         #[doc = concat!("Takes [`", stringify!($key), "`] as a key and returns [`", stringify!($value), "`]")]
@@ -76,12 +77,6 @@ macro_rules! table {
             }
         }
     };
-    ($(#[$docs:meta])+ $name:ident => $key:ty => $value:ty) => {
-        table!(
-            $(#[$docs])+
-            $name => $key => $value => $key
-        );
-    };
 }
 
 macro_rules! dupsort {
@@ -90,7 +85,7 @@ macro_rules! dupsort {
             $(#[$docs])+
             ///
             #[doc = concat!("`DUPSORT` table with subkey being: [`", stringify!($subkey), "`].")]
-            $name => $key => $value => $subkey
+            $name => $key => $value
         );
         impl DupSort for $name {
             type SubKey = $subkey;
@@ -154,7 +149,7 @@ table!(
 
 dupsort!(
     /// Stores the current value of a storage key.
-    PlainStorageState => Address => [H256] StorageEntry);
+    PlainStorageState => Address => [StorageKey] StorageEntry);
 
 table!(
     /// Stores the transaction numbers that changed each account.
@@ -211,7 +206,7 @@ dupsort!(
 
 dupsort!(
     /// Stores the state of a storage key before a certain transaction changed it.
-    StorageChangeSet => TxNumberAddress => [H256] StorageEntry);
+    StorageChangeSet => TxNumberAddress => [StorageKey] StorageEntry);
 
 table!(
     /// Stores the transaction sender for each transaction.
