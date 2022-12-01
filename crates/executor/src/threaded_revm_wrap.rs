@@ -33,7 +33,7 @@ use std::{
 
 #[derive(Debug, Clone)]
 pub struct ThreadedCacheDB {
-    pub accounts: Map<Address, Account>,
+    pub accounts: Map<Address, DbAccount>,
     pub storage: Map<Address, BTreeMap<StorageKey, StorageValue>>,
     pub contracts: Map<H256, Bytes>,
     pub logs: Vec<Log>,
@@ -59,13 +59,13 @@ impl ThreadedCacheDB {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Copy)]
 pub struct DbAccount {
     pub account: Account,
     pub state: AccountState,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Copy)]
 pub enum AccountState {
     /// Before Spurious Dragon hardfork there were a difference between empty and not existing.
     /// And we are flaging it here.
@@ -97,7 +97,7 @@ impl ThreadedChannelRequestor for ThreadedCacheDB {
         match resp {
             DatabaseResponse::Basic(addr, maybe_acct) => {
                 let acct = self.accounts.entry(addr).or_default();
-                *acct = maybe_acct.unwrap_or_default();
+                acct.account = maybe_acct.unwrap_or_default();
             }
             DatabaseResponse::Storage(addr, (key, maybe_value)) => {
                 let storage = self.storage.entry(addr).or_default();
@@ -121,7 +121,10 @@ impl ThreadedChannelRequestor for ThreadedCacheDB {
 
 impl CacheAccountProvider for ThreadedCacheDB {
     fn basic_account(&self, address: Address) -> Option<Account> {
-        self.accounts.get(&address).copied()
+        match self.accounts.get(&address) {
+            Some(acct) => Some(acct.account),
+            _ => None
+        }
     }
 }
 
@@ -129,8 +132,21 @@ impl CacheAccountProvider for ThreadedCacheDB {
 impl CacheStateProvider for ThreadedCacheDB {
     /// Get storage.
     fn storage(&self, account: Address, storage_key: StorageKey) -> Option<StorageValue> {
+        // TODO(brockelmore): reorg data structures to remove the `self.accounts.get()`
         if let Some(storage_map) = self.storage.get(&account) {
-            storage_map.get(&storage_key).copied()
+            match storage_map.get(&storage_key) {
+                Some(val) => Some(*val),
+                None => {
+                    if matches!(
+                        self.accounts.get(&account).expect("storage but no account").state,
+                        AccountState::StorageCleared | AccountState::NotExisting
+                    ) {
+                        Some(U256::zero())
+                    } else {
+                        None
+                    }
+                }
+            }
         } else {
             None
         }
