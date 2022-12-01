@@ -13,7 +13,6 @@ pub struct StorageEntry {
     pub value: StorageValue,
 }
 
-
 // impl Compact for StorageEntry {
 //     fn to_compact(self, buf: &mut impl bytes::BufMut) -> usize {
 //         // let mut flags = StorageEntryFlags::default();
