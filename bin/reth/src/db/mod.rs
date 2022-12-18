@@ -18,6 +18,8 @@ use tracing::info;
 mod gui;
 use gui::Gui;
 
+mod list;
+
 /// `reth db` command
 #[derive(Debug, Parser)]
 pub struct Command {
