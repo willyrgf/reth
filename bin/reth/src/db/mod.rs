@@ -15,6 +15,9 @@ use reth_provider::insert_canonical_block;
 use std::path::PathBuf;
 use tracing::info;
 
+mod gui;
+use gui::Gui;
+
 /// `reth db` command
 #[derive(Debug, Parser)]
 pub struct Command {
@@ -32,6 +35,8 @@ const DEFAULT_NUM_ITEMS: &str = "5";
 #[derive(Subcommand, Debug)]
 /// `reth db` subcommands
 pub enum Subcommands {
+    /// The GUI command for exploring the database
+    Gui,
     /// Lists all the tables, their entry count and their size
     Stats,
     /// Lists the contents of a table
@@ -107,6 +112,9 @@ impl Command {
             }
             Subcommands::List(args) => {
                 tool.list(args)?;
+            }
+            Subcommands::Gui => {
+                Gui::new(&db).run().await?;
             }
         }
 
