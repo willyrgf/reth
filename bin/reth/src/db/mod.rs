@@ -12,13 +12,11 @@ use reth_db::{
 };
 use reth_interfaces::test_utils::generators::random_block_range;
 use reth_provider::insert_canonical_block;
-use std::path::PathBuf;
+use std::{collections::HashMap, path::PathBuf};
 use tracing::info;
 
 mod gui;
 use gui::Gui;
-
-mod list;
 
 /// `reth db` command
 #[derive(Debug, Parser)]
@@ -116,7 +114,7 @@ impl Command {
                 tool.list(args)?;
             }
             Subcommands::Gui => {
-                Gui::new(&db).run().await?;
+                Gui::new(&db)?.run()?;
             }
         }
 
@@ -152,40 +150,44 @@ impl<'a, DB: Database> DbTool<'a, DB> {
     }
 
     /// Lists the given table data
-    fn list(&mut self, args: &ListArgs) -> Result<()> {
-        macro_rules! list_tables {
-            ($arg:expr, $start:expr, $len:expr  => [$($table:ident),*]) => {
-                match $arg {
-                    $(stringify!($table) => {
-                        self.list_table::<tables::$table>($start, $len)?
-                    },)*
-                    _ => {
-                        tracing::error!("Unknown table.");
-                        return Ok(())
-                    }
-                }
-            };
-        }
+    pub fn list(&mut self, args: &ListArgs) -> Result<Vec<HashMap<String, serde_json::Value>>> {
+        self.list_table::<tables::Headers>(0, 10)
+        // macro_rules! list_tables {
+        //     ($arg:expr, $start:expr, $len:expr  => [$($table:ident),*]) => {
+        //         let table = match $arg {
+        //             $(stringify!($table) => {
+        //                 self.list_table::<tables::$table>($start, $len)?
+        //             },)*
+        //             _ => {
+        //                 return Err(eyre::eyre!("Unknown table {$arg}."));
+        //             }
+        //         };
 
-        list_tables!(args.table.to_lowercase().as_str(), args.start, args.len => [
-            CanonicalHeaders,
-            HeaderTD,
-            HeaderNumbers,
-            Headers,
-            BlockBodies,
-            BlockOmmers,
-            TxHashNumber,
-            PlainAccountState,
-            BlockTransitionIndex,
-            TxTransitionIndex,
-            SyncStage,
-            Transactions
-        ]);
+        //         Ok(table)
+        //     };
+        // }
 
-        Ok(())
+        // list_tables!(args.table.to_lowercase().as_str(), args.start, args.len => [
+        //     CanonicalHeaders,
+        //     HeaderTD,
+        //     HeaderNumbers,
+        //     Headers,
+        //     BlockBodies,
+        //     BlockOmmers,
+        //     TxHashNumber,
+        //     PlainAccountState,
+        //     BlockTransitionIndex,
+        //     TxTransitionIndex,
+        //     SyncStage,
+        //     Transactions
+        // ])
     }
 
-    fn list_table<T: Table>(&mut self, start: usize, len: usize) -> Result<()> {
+    fn list_table<T: Table>(
+        &mut self,
+        start: usize,
+        len: usize,
+    ) -> Result<Vec<HashMap<String, serde_json::Value>>> {
         let data = self.db.view(|tx| {
             let mut cursor = tx.cursor::<T>().expect("Was not able to obtain a cursor.");
 
@@ -201,6 +203,16 @@ impl<'a, DB: Database> DbTool<'a, DB> {
         })?;
 
         println!("{data:?}");
-        Ok(())
+
+        let mut res = Vec::new();
+        for item in data {
+            let (_key, value) = item.unwrap();
+            let value = serde_json::to_value(value)?;
+            // let value = value.as_object().unwrap();
+            let value: HashMap<String, serde_json::Value> = serde_json::from_value(value).unwrap();
+            res.push(value);
+        }
+
+        Ok(res)
     }
 }
