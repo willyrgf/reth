@@ -1,3 +1,4 @@
+use backon::ExponentialBackoff;
 use futures::{stream::Stream, FutureExt};
 use reth_interfaces::{
     consensus::Consensus,
@@ -20,6 +21,7 @@ use std::{
     task::{Context, Poll},
     time::Duration,
 };
+use tokio::time::{sleep, Sleep};
 
 /// Download headers in batches
 #[derive(Debug)]
@@ -92,22 +94,18 @@ type HeadersFut = Pin<Box<dyn Future<Output = PeerRequestResult<BlockHeaders>> +
 
 /// A retryable future that returns a list of [`BlockHeaders`] on success.
 struct HeadersRequestFuture {
-    request: HeadersRequest,
     fut: HeadersFut,
-    retries: usize,
-    max_retries: usize,
+    backoff: ExponentialBackoff,
+    sleep: Option<Pin<Box<Sleep>>>,
 }
 
 impl HeadersRequestFuture {
-    /// Returns true if the request can be retried.
-    fn is_retryable(&self) -> bool {
-        self.retries < self.max_retries
-    }
-
-    /// Increments the retry counter and returns whether the request can still be retried.
-    fn inc_err(&mut self) -> bool {
-        self.retries += 1;
-        self.is_retryable()
+    /// Sets the next backoff if any.
+    fn set_next_backoff(&mut self) -> bool {
+        if let Some(duration) = self.backoff.next() {
+            self.sleep = Some(Box::pin(sleep(duration)));
+        }
+        self.sleep.is_some()
     }
 }
 
@@ -115,7 +113,19 @@ impl Future for HeadersRequestFuture {
     type Output = PeerRequestResult<BlockHeaders>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
-        self.get_mut().fut.poll_unpin(cx)
+        let this = self.get_mut();
+
+        if let Some(mut sleep) = this.sleep.take() {
+            match sleep.poll_unpin(cx) {
+                Poll::Pending => {
+                    this.sleep = Some(sleep);
+                    return Poll::Pending
+                }
+                _ => {} // continue
+            }
+        }
+
+        this.fut.poll_unpin(cx)
     }
 }
 
@@ -198,39 +208,31 @@ where
             None => {
                 // queue in the first request
                 let client = Arc::clone(&self.client);
-                let req = self.headers_request();
-                tracing::trace!(
-                    target: "downloaders::headers",
-                    "requesting headers {req:?}"
-                );
+                let request = self.headers_request();
+                tracing::trace!(target: "downloaders::headers", ?request, "requesting headers");
                 HeadersRequestFuture {
-                    request: req.clone(),
-                    fut: Box::pin(async move { client.get_headers(req).await }),
-                    retries: 0,
-                    max_retries: self.request_retries,
+                    fut: Box::pin(async move { client.get_headers(request).await }),
+                    backoff: ExponentialBackoff::default().with_max_times(self.request_retries),
+                    sleep: None,
                 }
             }
             Some(fut) => fut,
         }
     }
 
-    /// Tries to fuse the future with a new request.
+    /// Tries to fuse the future with a new request and sets the next
+    /// duration for the exponential backoff.
     ///
     /// Returns an `Err` if the request exhausted all retries
     fn try_fuse_request_fut(&self, fut: &mut HeadersRequestFuture) -> Result<(), ()> {
-        if !fut.inc_err() {
+        // If there is no more backoff to set, all attempts have been exhausted
+        if !fut.set_next_backoff() {
             return Err(())
         }
-        tracing::trace!(
-            target : "downloaders::headers",
-            "retrying future attempt: {}/{}",
-            fut.retries,
-            fut.max_retries
-        );
-        let req = self.headers_request();
-        fut.request = req.clone();
         let client = Arc::clone(&self.client);
-        fut.fut = Box::pin(async move { client.get_headers(req).await });
+        let request = self.headers_request();
+        tracing::trace!(target: "downloaders::headers", ?request, "retrying header request");
+        fut.fut = Box::pin(async move { client.get_headers(request).await });
         Ok(())
     }
 
@@ -339,25 +341,19 @@ where
                                 this.request = Some(this.get_or_init_fut());
                             }
                         }
-                        Err(err) => {
+                        Err(error) => {
                             // Penalize the peer for bad response
                             if let Some(peer_id) = peer_id {
-                                tracing::trace!(
-                                    target: "downloaders::headers",
-                                    "penalizing peer {peer_id} for {err:?}"
-                                );
+                                tracing::trace!(target: "downloaders::headers", ?peer_id, ?error, "penalizing peer");
                                 this.client.report_bad_message(peer_id);
                             }
                             // Response is invalid, attempt to retry
                             if this.try_fuse_request_fut(&mut fut).is_err() {
-                                tracing::trace!(
-                                    target: "downloaders::headers",
-                                    "ran out of retries terminating stream"
-                                );
+                                tracing::trace!(target: "downloaders::headers", "ran out of retries terminating stream");
                                 // We exhausted all of the retries. Stream must terminate
                                 this.buffered.clear();
                                 this.encountered_error = true;
-                                return Poll::Ready(Some(Err(err)))
+                                return Poll::Ready(Some(Err(error)))
                             }
                             // Reset the future
                             this.request = Some(fut);

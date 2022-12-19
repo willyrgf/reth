@@ -6,7 +6,7 @@ use std::fmt::Debug;
 
 /// The header request struct to be sent to connected peers, which
 /// will proceed to ask them to stream the requested headers to us.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct HeadersRequest {
     /// The starting block
     pub start: BlockHashOrNumber,
