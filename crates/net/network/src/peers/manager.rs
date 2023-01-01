@@ -455,7 +455,8 @@ impl PeersManager {
 
     /// Returns the idle peer with the highest reputation.
     ///
-    /// Peers with a `forkId` are considered better than peers without.
+    /// Peers that are `trusted`, See [PeerKind], are prioritized as long as they're not currently
+    /// marked as banned Peers with a `forkId` are considered better than peers without.
     ///
     /// Returns `None` if no peer is available.
     fn best_unconnected(&mut self) -> Option<(PeerId, &mut Peer)> {
