@@ -141,6 +141,11 @@ where
             }
         }?;
 
+        tracing::trace!(
+            hello=%their_hello,
+            "validating incoming hello message",
+        );
+
         // TODO: explicitly document that we only support v5.
         if their_hello.protocol_version != ProtocolVersion::V5 {
             // send a disconnect message notifying the peer of the protocol version mismatch
