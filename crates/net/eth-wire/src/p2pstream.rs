@@ -142,7 +142,7 @@ where
         }?;
 
         tracing::trace!(
-            hello=%their_hello,
+            hello=?their_hello,
             "validating incoming hello message",
         );
 
