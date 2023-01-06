@@ -32,7 +32,7 @@ mod transaction;
 /// Helper function for calculating Merkle proofs and hashes
 pub mod proofs;
 
-pub use account::Account;
+pub use account::{Account, GenesisAccount};
 pub use bits::H512;
 pub use block::{Block, BlockHashOrNumber, SealedBlock};
 pub use bloom::Bloom;
