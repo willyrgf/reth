@@ -22,7 +22,7 @@ use reth_network_api::NetworkInfo;
 use reth_network::{NetworkConfig, NetworkEvent, NetworkHandle, NetworkManager, PeersConfig};
 use reth_primitives::{
     proofs::genesis_state_root, Chain, ForkHash, ForkId, Header, HeadersDirection, NodeRecord,
-    PeerId, H160, H256,
+    PeerId, H160, H256, INITIAL_BASE_FEE,
 };
 use reth_provider::test_utils::NoopProvider;
 use reth_transaction_pool::test_utils::testing_pool;
@@ -75,6 +75,7 @@ fn genesis_header(genesis: &Genesis) -> Header {
         timestamp: genesis.timestamp.as_u64(),
         mix_hash: genesis.mix_hash.0.into(),
         beneficiary: genesis.coinbase.0.into(),
+        base_fee_per_gas: genesis.config.london_block.map(|_| INITIAL_BASE_FEE),
         ..Default::default()
     }
 }
@@ -105,6 +106,7 @@ fn block_to_header(block: Block<ethers_core::types::H256>) -> Header {
         timestamp: block.timestamp.as_u64(),
         mix_hash: block.mix_hash.unwrap().0.into(),
         beneficiary: block.author.unwrap().0.into(),
+        base_fee_per_gas: block.base_fee_per_gas.map(|fee| fee.as_u64()),
         ..Default::default()
     }
 }
@@ -923,7 +925,6 @@ async fn sync_from_clique_geth() {
         // === initialize reth networking stack ===
 
         let secret_key = SecretKey::new(&mut rand::thread_rng());
-
         let (reth_p2p, reth_disc) = unused_tcp_udp();
 
         // get correct status using genesis information
