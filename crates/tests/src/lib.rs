@@ -14,3 +14,6 @@ mod sync;
 
 #[cfg(test)]
 mod reth_builder;
+
+#[cfg(test)]
+mod stage_config;

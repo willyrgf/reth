@@ -20,6 +20,8 @@ use reth_tracing::tracing::{debug, info};
 use std::sync::Arc;
 use tokio::sync::watch::error::SendError;
 
+use crate::stage_config::StageConfig;
+
 /// Reth test instance
 pub struct RethTestInstance<DB> {
     pub consensus: Arc<BeaconConsensus>,
@@ -27,6 +29,7 @@ pub struct RethTestInstance<DB> {
     pub db: Arc<DB>,
     pub genesis: Genesis,
     pub tip: Option<H256>,
+    pub config: StageConfig,
 }
 
 // TODO: configs
@@ -38,7 +41,7 @@ where
     /// Start the reth sync pipeline
     pub async fn start(&self) -> Result<(), RethTestInstanceError> {
         // init genesis
-        let genesis_hash = init_genesis(self.db.clone(), self.genesis.clone())?;
+        let _genesis_hash = init_genesis(self.db.clone(), self.genesis.clone())?;
 
         // start pipeline
         let fetch_client = Arc::new(self.network.fetch_client().await.unwrap());
@@ -46,17 +49,17 @@ where
             .with_sync_state_updater(self.network.clone())
             .push(HeaderStage {
                 downloader: headers::linear::LinearDownloadBuilder::default()
-                    .batch_size(config.stages.headers.downloader_batch_size)
-                    .retries(config.stages.headers.downloader_retries)
+                    .batch_size(self.config.headers.downloader_batch_size)
+                    .retries(self.config.headers.downloader_retries)
                     .build(self.consensus.clone(), fetch_client.clone()),
                 consensus: self.consensus.clone(),
                 client: fetch_client.clone(),
                 network_handle: self.network.clone(),
-                commit_threshold: config.stages.headers.commit_threshold,
+                commit_threshold: self.config.headers.commit_threshold,
                 metrics: HeaderMetrics::default(),
             })
             .push(TotalDifficultyStage {
-                commit_threshold: config.stages.total_difficulty.commit_threshold,
+                commit_threshold: self.config.total_difficulty.commit_threshold,
             })
             .push(BodyStage {
                 downloader: Arc::new(
@@ -64,20 +67,20 @@ where
                         fetch_client.clone(),
                         self.consensus.clone(),
                     )
-                    .with_batch_size(config.stages.bodies.downloader_batch_size)
-                    .with_retries(config.stages.bodies.downloader_retries)
-                    .with_concurrency(config.stages.bodies.downloader_concurrency),
+                    .with_batch_size(self.config.bodies.downloader_batch_size)
+                    .with_retries(self.config.bodies.downloader_retries)
+                    .with_concurrency(self.config.bodies.downloader_concurrency),
                 ),
                 consensus: self.consensus.clone(),
-                commit_threshold: config.stages.bodies.commit_threshold,
+                commit_threshold: self.config.bodies.commit_threshold,
             })
             .push(SenderRecoveryStage {
-                batch_size: config.stages.sender_recovery.batch_size,
-                commit_threshold: config.stages.sender_recovery.commit_threshold,
+                batch_size: self.config.sender_recovery.batch_size,
+                commit_threshold: self.config.sender_recovery.commit_threshold,
             })
             .push(ExecutionStage {
                 config: ExecutorConfig::new_ethereum(),
-                commit_threshold: config.stages.execution.commit_threshold,
+                commit_threshold: self.config.execution.commit_threshold,
             });
 
         if let Some(tip) = self.tip {
@@ -120,12 +123,20 @@ pub struct RethBuilder<DB> {
     db: Option<Arc<DB>>,
     genesis: Option<Genesis>,
     tip: Option<H256>,
+    stage_config: Option<StageConfig>,
 }
 
 impl<DB> RethBuilder<DB> {
     /// Creates a new builder.
     pub fn new() -> Self {
-        Self { network: None, consensus: None, db: None, genesis: None, tip: None }
+        Self {
+            network: None,
+            consensus: None,
+            db: None,
+            genesis: None,
+            tip: None,
+            stage_config: None,
+        }
     }
 
     /// Sets the network handle.
@@ -163,6 +174,13 @@ impl<DB> RethBuilder<DB> {
         self
     }
 
+    /// Sets the stage config.
+    #[must_use]
+    pub fn stage_config(mut self, stage_config: StageConfig) -> Self {
+        self.stage_config = Some(stage_config);
+        self
+    }
+
     /// Builds the test instance.
     pub fn build(self) -> RethTestInstance<DB> {
         RethTestInstance {
@@ -171,6 +189,7 @@ impl<DB> RethBuilder<DB> {
             db: self.db.unwrap(),
             genesis: self.genesis.unwrap(),
             tip: self.tip,
+            config: self.stage_config.unwrap_or_default(),
         }
     }
 }

@@ -305,8 +305,6 @@ impl CliqueGethBuilder {
             None => genesis_funded(self.chain_id, our_address),
         };
 
-        let genesis = self.genesis.unwrap_or_else(|| genesis_funded(self.chain_id, our_address));
-
         let geth = if let Some(data_dir) = self.data_dir {
             Geth::new().data_dir(data_dir)
         } else {

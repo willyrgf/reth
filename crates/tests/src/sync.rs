@@ -3,7 +3,7 @@ use crate::{
     reth_builder::{RethBuilder, RethTestInstance},
 };
 use enr::k256::ecdsa::SigningKey;
-use ethers_core::types::{Bytes, U64};
+use ethers_core::types::U64;
 use ethers_middleware::SignerMiddleware;
 use ethers_providers::{Http, Middleware, Provider};
 use ethers_signers::{LocalWallet, Signer, Wallet};
@@ -173,7 +173,7 @@ async fn sync_from_clique_geth() {
             .build();
 
         // start reth then manually connect geth
-        tokio::task::spawn(reth.start());
+        tokio::task::spawn(async move { reth.start().await });
         tokio::task::spawn(network);
 
         // create networkeventstream to get the next session established event easily
@@ -190,7 +190,7 @@ async fn sync_from_clique_geth() {
         handle.add_peer(geth_peer_id, geth_socket);
 
         // wait for the session to be established
-        let peer_id = events.peer_added_and_established().await.unwrap();
+        let _peer_id = events.peer_added_and_established().await.unwrap();
 
     })
     .await
