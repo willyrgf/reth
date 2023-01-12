@@ -4,12 +4,59 @@ use ethers_core::{
     utils::{ChainConfig, CliqueConfig, Genesis, GenesisAccount, Geth},
 };
 use ethers_signers::{LocalWallet, Signer};
+use reth_cli_utils::chainspec::{ChainSpecification, Genesis as RethGenesis};
+use reth_consensus::Config as ConsensusConfig;
 use reth_eth_wire::{EthVersion, Status};
 use reth_net_test_utils::unused_port;
 use reth_primitives::{
     proofs::genesis_state_root, Chain, ForkHash, ForkId, Header, H160, INITIAL_BASE_FEE,
 };
 use std::collections::HashMap;
+
+/// Converts an ethers [`Genesis`] into a reth
+/// [`ChainSpecification`](reth_cli_utils::chainspec::ChainSpecification).
+pub(crate) fn genesis_to_chainspec(genesis: &Genesis) -> ChainSpecification {
+    ChainSpecification {
+        consensus: ConsensusConfig {
+            chain_id: genesis.config.chain_id,
+            homestead_block: genesis.config.homestead_block.unwrap_or_default(),
+            dao_fork_block: genesis.config.dao_fork_block.unwrap_or_default(),
+            dao_fork_support: genesis.config.dao_fork_support,
+            eip_150_block: genesis.config.eip150_block.unwrap_or_default(),
+            eip_155_block: genesis.config.eip155_block.unwrap_or_default(),
+            eip_158_block: genesis.config.eip158_block.unwrap_or_default(),
+            byzantium_block: genesis.config.byzantium_block.unwrap_or_default(),
+            petersburg_block: genesis.config.petersburg_block.unwrap_or_default(),
+            constantinople_block: genesis.config.constantinople_block.unwrap_or_default(),
+            istanbul_block: genesis.config.istanbul_block.unwrap_or_default(),
+            berlin_block: genesis.config.berlin_block.unwrap_or_default(),
+            london_block: genesis.config.london_block.unwrap_or_default(),
+            // paris_block: genesis.config.paris_block.unwrap_or_default(),
+            merge_terminal_total_difficulty: genesis
+                .config
+                .terminal_total_difficulty
+                .unwrap_or_default()
+                .as_u128(),
+            ..Default::default() // TODO: remove paris block as the hard fork is determined by ttd?
+        },
+        genesis: RethGenesis {
+            nonce: genesis.nonce.as_u64(),
+            timestamp: genesis.timestamp.as_u64(),
+            gas_limit: genesis.gas_limit.as_u64(),
+            difficulty: genesis.difficulty.into(),
+            mix_hash: genesis.mix_hash.0.into(),
+            coinbase: genesis.coinbase.0.into(),
+            // state_root: genesis.state_root, TODO: remove state_root from genesis
+            alloc: genesis
+                .alloc
+                .iter()
+                .map(|(addr, account)| (addr.0.into(), convert_genesis_account(account)))
+                .collect::<HashMap<H160, _>>(),
+            extra_data: genesis.extra_data.0.clone().into(),
+            ..Default::default()
+        },
+    }
+}
 
 /// Extracts the genesis block header from an ethers [`Genesis`](ethers_core::utils::Genesis).
 pub(crate) fn genesis_header(genesis: &Genesis) -> Header {

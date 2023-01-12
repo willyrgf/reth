@@ -32,15 +32,13 @@ pub(crate) struct RethTestInstance<DB> {
     pub(crate) config: StageConfig,
 }
 
-// TODO: configs
-
 impl<DB> RethTestInstance<DB>
 where
     DB: Database,
 {
     /// Start the reth sync pipeline
     pub(crate) async fn start(&self) -> Result<(), RethTestInstanceError> {
-        // init genesis
+        // make sure to init genesis if not done already
         let _genesis_hash = init_genesis(self.db.clone(), self.genesis.clone())?;
 
         // start pipeline

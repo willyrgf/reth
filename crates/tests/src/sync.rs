@@ -1,5 +1,5 @@
 use crate::{
-    clique::{block_to_header, genesis_header, CliqueGethBuilder},
+    clique::{block_to_header, genesis_header, genesis_to_chainspec, CliqueGethBuilder},
     reth_builder::{RethBuilder, RethTestInstance},
 };
 use enr::k256::ecdsa::SigningKey;
@@ -8,6 +8,7 @@ use ethers_middleware::SignerMiddleware;
 use ethers_providers::{Http, Middleware, Provider};
 use ethers_signers::{LocalWallet, Signer, Wallet};
 use reth_cli_utils::init::init_db;
+use reth_consensus::BeaconConsensus;
 use reth_db::mdbx::{Env, WriteMap};
 use reth_net_test_utils::{enr_to_peer_id, unused_tcp_udp, NetworkEventStream, GETH_TIMEOUT};
 use reth_network::{NetworkConfig, NetworkManager};
@@ -65,12 +66,9 @@ async fn produce_blocks(
     provider
 }
 
-///
-
 /// Integration tests for the full sync pipeline.
 ///
 /// Tests that are run against a real `geth` node use geth's Clique functionality to create blocks.
-
 #[tokio::test(flavor = "multi_thread")]
 async fn sync_from_clique_geth() {
     reth_tracing::init_test_tracing();
@@ -165,15 +163,21 @@ async fn sync_from_clique_geth() {
 
         let handle = network.handle().clone();
 
-        // initialize db and consensus
+        // convert ethers genesis to chainspec
+        let chainspec = genesis_to_chainspec(&genesis);
+
+        // initialize db
         let reth_temp_dir = tempfile::tempdir().expect("should be able to create reth data dir");
         let db = Arc::new(init_db(reth_temp_dir.path()).unwrap());
+
+        // initialize consensus
+        let consensus = Arc::new(BeaconConsensus::new(chainspec.consensus));
 
         // build reth and start the pipeline
         let reth: RethTestInstance<Env<WriteMap>> = RethBuilder::new()
             .db(db)
-            // .consensus(consensus)
-            // .genesis(genesis) // TODO: convert ethers genesis to reth genesis
+            .consensus(consensus)
+            .genesis(chainspec.genesis)
             .network(handle.clone())
             .build();
 
