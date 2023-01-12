@@ -23,13 +23,13 @@ use tokio::sync::watch::error::SendError;
 use crate::stage_config::StageConfig;
 
 /// Reth test instance
-pub struct RethTestInstance<DB> {
-    pub consensus: Arc<BeaconConsensus>,
-    pub network: NetworkHandle,
-    pub db: Arc<DB>,
-    pub genesis: Genesis,
-    pub tip: Option<H256>,
-    pub config: StageConfig,
+pub(crate) struct RethTestInstance<DB> {
+    pub(crate) consensus: Arc<BeaconConsensus>,
+    pub(crate) network: NetworkHandle,
+    pub(crate) db: Arc<DB>,
+    pub(crate) genesis: Genesis,
+    pub(crate) tip: Option<H256>,
+    pub(crate) config: StageConfig,
 }
 
 // TODO: configs
@@ -39,7 +39,7 @@ where
     DB: Database,
 {
     /// Start the reth sync pipeline
-    pub async fn start(&self) -> Result<(), RethTestInstanceError> {
+    pub(crate) async fn start(&self) -> Result<(), RethTestInstanceError> {
         // init genesis
         let _genesis_hash = init_genesis(self.db.clone(), self.genesis.clone())?;
 
@@ -101,7 +101,7 @@ where
 
 /// An error that can occur while starting reth.
 #[derive(Debug, thiserror::Error)]
-pub enum RethTestInstanceError {
+pub(crate) enum RethTestInstanceError {
     /// Error while initializing the genesis block.
     #[error("Error while initializing the genesis block: {0}")]
     GenesisInitError(#[from] reth_db::Error),
@@ -117,7 +117,7 @@ pub enum RethTestInstanceError {
 
 // TODO: config
 /// Builder for a reth test instance.
-pub struct RethBuilder<DB> {
+pub(crate) struct RethBuilder<DB> {
     network: Option<NetworkHandle>,
     consensus: Option<Arc<BeaconConsensus>>,
     db: Option<Arc<DB>>,
@@ -128,7 +128,7 @@ pub struct RethBuilder<DB> {
 
 impl<DB> RethBuilder<DB> {
     /// Creates a new builder.
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             network: None,
             consensus: None,
@@ -141,48 +141,48 @@ impl<DB> RethBuilder<DB> {
 
     /// Sets the network handle.
     #[must_use]
-    pub fn network(mut self, network: NetworkHandle) -> Self {
+    pub(crate) fn network(mut self, network: NetworkHandle) -> Self {
         self.network = Some(network);
         self
     }
 
     /// Sets the consensus handle.
     #[must_use]
-    pub fn consensus(mut self, consensus: Arc<BeaconConsensus>) -> Self {
+    pub(crate) fn consensus(mut self, consensus: Arc<BeaconConsensus>) -> Self {
         self.consensus = Some(consensus);
         self
     }
 
     /// Sets the database handle.
     #[must_use]
-    pub fn db(mut self, db: Arc<DB>) -> Self {
+    pub(crate) fn db(mut self, db: Arc<DB>) -> Self {
         self.db = Some(db);
         self
     }
 
     /// Sets the genesis block and chain config.
     #[must_use]
-    pub fn genesis(mut self, genesis: Genesis) -> Self {
+    pub(crate) fn genesis(mut self, genesis: Genesis) -> Self {
         self.genesis = Some(genesis);
         self
     }
 
     /// Sets the tip block hash for reverse download.
     #[must_use]
-    pub fn tip(mut self, tip: H256) -> Self {
+    pub(crate) fn tip(mut self, tip: H256) -> Self {
         self.tip = Some(tip);
         self
     }
 
     /// Sets the stage config.
     #[must_use]
-    pub fn stage_config(mut self, stage_config: StageConfig) -> Self {
+    pub(crate) fn stage_config(mut self, stage_config: StageConfig) -> Self {
         self.stage_config = Some(stage_config);
         self
     }
 
     /// Builds the test instance.
-    pub fn build(self) -> RethTestInstance<DB> {
+    pub(crate) fn build(self) -> RethTestInstance<DB> {
         RethTestInstance {
             network: self.network.unwrap(),
             consensus: self.consensus.unwrap(),

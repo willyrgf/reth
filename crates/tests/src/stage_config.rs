@@ -6,28 +6,28 @@
 
 /// Configuration for each stage in the pipeline.
 #[derive(Debug, Clone, Default)]
-pub struct StageConfig {
+pub(crate) struct StageConfig {
     /// Header stage configuration.
-    pub headers: HeadersConfig,
+    pub(crate) headers: HeadersConfig,
     /// Total difficulty stage configuration
-    pub total_difficulty: TotalDifficultyConfig,
+    pub(crate) total_difficulty: TotalDifficultyConfig,
     /// Body stage configuration.
-    pub bodies: BodiesConfig,
+    pub(crate) bodies: BodiesConfig,
     /// Sender recovery stage configuration.
-    pub sender_recovery: SenderRecoveryConfig,
+    pub(crate) sender_recovery: SenderRecoveryConfig,
     /// Execution stage configuration.
-    pub execution: ExecutionConfig,
+    pub(crate) execution: ExecutionConfig,
 }
 
 /// Header stage configuration.
 #[derive(Debug, Clone)]
-pub struct HeadersConfig {
+pub(crate) struct HeadersConfig {
     /// The maximum number of headers to download before committing progress to the database.
-    pub commit_threshold: u64,
+    pub(crate) commit_threshold: u64,
     /// The maximum number of headers to request from a peer at a time.
-    pub downloader_batch_size: u64,
+    pub(crate) downloader_batch_size: u64,
     /// The number of times to retry downloading a set of headers.
-    pub downloader_retries: usize,
+    pub(crate) downloader_retries: usize,
 }
 
 impl Default for HeadersConfig {
@@ -38,10 +38,10 @@ impl Default for HeadersConfig {
 
 /// Total difficulty stage configuration
 #[derive(Debug, Clone)]
-pub struct TotalDifficultyConfig {
+pub(crate) struct TotalDifficultyConfig {
     /// The maximum number of total difficulty entries to sum up before committing progress to the
     /// database.
-    pub commit_threshold: u64,
+    pub(crate) commit_threshold: u64,
 }
 
 impl Default for TotalDifficultyConfig {
@@ -52,18 +52,18 @@ impl Default for TotalDifficultyConfig {
 
 /// Body stage configuration.
 #[derive(Debug, Clone)]
-pub struct BodiesConfig {
+pub(crate) struct BodiesConfig {
     /// The maximum number of bodies to download before committing progress to the database.
-    pub commit_threshold: u64,
+    pub(crate) commit_threshold: u64,
     /// The maximum number of bodies to request from a peer at a time.
-    pub downloader_batch_size: usize,
+    pub(crate) downloader_batch_size: usize,
     /// The number of times to retry downloading a set of bodies.
-    pub downloader_retries: usize,
+    pub(crate) downloader_retries: usize,
     /// The maximum number of body requests to have in flight at a time.
     ///
     /// The maximum number of bodies downloaded at the same time is `downloader_batch_size *
     /// downloader_concurrency`.
-    pub downloader_concurrency: usize,
+    pub(crate) downloader_concurrency: usize,
 }
 
 impl Default for BodiesConfig {
@@ -79,11 +79,11 @@ impl Default for BodiesConfig {
 
 /// Sender recovery stage configuration.
 #[derive(Debug, Clone)]
-pub struct SenderRecoveryConfig {
+pub(crate) struct SenderRecoveryConfig {
     /// The maximum number of blocks to process before committing progress to the database.
-    pub commit_threshold: u64,
+    pub(crate) commit_threshold: u64,
     /// The maximum number of transactions to recover senders for concurrently.
-    pub batch_size: usize,
+    pub(crate) batch_size: usize,
 }
 
 impl Default for SenderRecoveryConfig {
@@ -94,9 +94,9 @@ impl Default for SenderRecoveryConfig {
 
 /// Execution stage configuration.
 #[derive(Debug, Clone)]
-pub struct ExecutionConfig {
+pub(crate) struct ExecutionConfig {
     /// The maximum number of blocks to execution before committing progress to the database.
-    pub commit_threshold: u64,
+    pub(crate) commit_threshold: u64,
 }
 
 impl Default for ExecutionConfig {

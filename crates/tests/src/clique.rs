@@ -222,7 +222,7 @@ pub(crate) fn genesis_funded(chain_id: u64, signer_addr: Address) -> Genesis {
 ///    .build();
 /// ```
 #[derive(Debug)]
-pub struct CliqueGethBuilder {
+pub(crate) struct CliqueGethBuilder {
     chain_id: u64,
     signer: Option<Bytes>,
     genesis: Option<Genesis>,
@@ -231,21 +231,21 @@ pub struct CliqueGethBuilder {
 
 impl CliqueGethBuilder {
     /// Creates a new [`CliqueGethBuilder`].
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self { chain_id: 1337, signer: None, genesis: None, data_dir: None }
     }
 
     /// Sets the chain id for the [`Geth`](ethers_core::utils::Geth) instance.
     /// Defaults to `1337`.
     #[must_use]
-    pub fn chain_id(mut self, chain_id: u64) -> Self {
+    pub(crate) fn chain_id(mut self, chain_id: u64) -> Self {
         self.chain_id = chain_id;
         self
     }
 
     /// Sets the data dir for the [`Geth`](ethers_core::utils::Geth) instance.
     #[must_use]
-    pub fn data_dir(mut self, data_dir: String) -> Self {
+    pub(crate) fn data_dir(mut self, data_dir: String) -> Self {
         self.data_dir = Some(data_dir);
         self
     }
@@ -254,7 +254,7 @@ impl CliqueGethBuilder {
     /// If no private key is provided, a random one will be generated. The generated key will also
     /// be funded with the maximum amount of coins in the genesis block.
     #[must_use]
-    pub fn with_signer(mut self, private_key: Bytes) -> Self {
+    pub(crate) fn with_signer(mut self, private_key: Bytes) -> Self {
         self.signer = Some(private_key);
         self
     }
@@ -263,7 +263,7 @@ impl CliqueGethBuilder {
     /// If no genesis is provided, one will be generated with forks up to London enabled at block
     /// zero.
     #[must_use]
-    pub fn with_genesis(mut self, genesis: Genesis) -> Self {
+    pub(crate) fn with_genesis(mut self, genesis: Genesis) -> Self {
         self.genesis = Some(genesis);
         self
     }
@@ -275,7 +275,7 @@ impl CliqueGethBuilder {
     ///
     /// Returns the [`Geth`], a compatible [`Status`](reth_eth_wire::types::Status), the computed
     /// [`Genesis`](ethers_core::utils::Genesis) and the [`SigningKey`] created for signing blocks.
-    pub fn build(self) -> (Geth, Status, Genesis, SigningKey) {
+    pub(crate) fn build(self) -> (Geth, Status, Genesis, SigningKey) {
         let signer = match self.signer {
             Some(private_key) => SigningKey::from_bytes(&private_key).expect("invalid private key"),
             None => SigningKey::random(&mut rand::thread_rng()),
