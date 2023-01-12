@@ -1,16 +1,15 @@
 use crate::{
-    clique::{block_to_header, extract_status, genesis_funded, genesis_header, start_reth},
+    clique::{block_to_header, genesis_header, CliqueGethBuilder},
     reth_builder::{RethBuilder, RethTestInstance},
 };
 use enr::k256::ecdsa::SigningKey;
-use ethers_core::types::U64;
+use ethers_core::types::{Bytes, U64};
 use ethers_middleware::SignerMiddleware;
 use ethers_providers::{Http, Middleware, Provider};
-use ethers_signers::{LocalWallet, Signer};
-use futures::StreamExt;
+use ethers_signers::{LocalWallet, Signer, Wallet};
 use reth_db::mdbx::{Env, WriteMap};
-use reth_net_test_utils::{create_new_geth, enr_to_peer_id, unused_tcp_udp, GETH_TIMEOUT};
-use reth_network::{NetworkConfig, NetworkEvent, NetworkManager};
+use reth_net_test_utils::{enr_to_peer_id, unused_tcp_udp, NetworkEventStream, GETH_TIMEOUT};
+use reth_network::{NetworkConfig, NetworkManager};
 use reth_primitives::{PeerId, H256};
 use reth_provider::test_utils::NoopProvider;
 use secp256k1::SecretKey;
@@ -22,6 +21,51 @@ use std::{
 };
 use tokio::task;
 
+/// Creates an ethers provider, passing the provided private key to `personal_importRawKey`,
+/// unlocking it, and starting block production by starting mining.
+async fn produce_blocks(
+    rpc_port: u16,
+    private_key: SigningKey,
+) -> SignerMiddleware<Provider<Http>, Wallet<SigningKey>> {
+    // create the signer
+    let wallet: LocalWallet = private_key.clone().into();
+    let our_address = wallet.address();
+
+    // set up ethers provider
+    let geth_endpoint = SocketAddr::new([127, 0, 0, 1].into(), rpc_port).to_string();
+    let provider = Provider::<Http>::try_from(format!("http://{geth_endpoint}")).unwrap();
+    let provider =
+        SignerMiddleware::new_with_provider_chain(provider, wallet.clone()).await.unwrap();
+
+    // first get the balance and make sure its not zero
+    let balance = provider.get_balance(our_address, None).await.unwrap();
+    assert_ne!(balance, 0u64.into());
+    println!("address: {our_address:?}");
+    println!("balance at genesis: {balance:?}");
+
+    // TODO: create transactions
+
+    // send the private key to geth and unlock it
+    let key_bytes = private_key.to_bytes().to_vec().into();
+    println!("private key: {}", hex::encode(&key_bytes));
+    let unlocked_addr = provider.import_raw_key(key_bytes, "".to_string()).await.unwrap();
+    assert_eq!(unlocked_addr, our_address);
+
+    let unlock_success = provider.unlock_account(our_address, "".to_string(), None).await.unwrap();
+    assert!(unlock_success);
+
+    // start mining?
+    provider.start_mining(None).await.unwrap();
+
+    // check that we are mining
+    let mining = provider.mining().await.unwrap();
+    assert!(mining);
+
+    provider
+}
+
+///
+
 /// Integration tests for the full sync pipeline.
 ///
 /// Tests that are run against a real `geth` node use geth's Clique functionality to create blocks.
@@ -32,63 +76,28 @@ async fn sync_from_clique_geth() {
     tokio::time::timeout(GETH_TIMEOUT, async move {
         // first create a signer that we will fund so we can make transactions
         let chain_id = 13337u64;
-        let signing_key = SigningKey::random(&mut rand::thread_rng());
-        let wallet: LocalWallet = signing_key.clone().into();
-        let our_address = wallet.address();
+        let data_dir = tempfile::tempdir().expect("should create temp dir");
 
-        let (geth, data_dir) = create_new_geth();
-
-        // TODO: remove - this is just so we can see the genesis file created
         // print datadir for debugging and make sure to persist the dir
         let dir_path = data_dir.into_path();
         println!("geth datadir: {dir_path:?}");
 
-        // === fund wallet ===
+        // this creates a funded geth
+        let clique_geth = CliqueGethBuilder::new()
+            .chain_id(chain_id)
+            .data_dir(dir_path.to_str().unwrap().into());
 
-        // create a pre-funded geth and turn on p2p
-        let genesis = genesis_funded(chain_id, wallet.address());
-        println!("genesis: {genesis:#?}");
-        let geth = geth.genesis(genesis.clone()).chain_id(chain_id).disable_discovery().insecure_unlock();
+        // build the funded geth
+        let (geth, status, genesis, signing_key) = clique_geth.build();
 
-        // geth starts in dev mode, we can spawn it, mine blocks, and shut it down
-        // we need to clone it because we will be reusing the geth config when we restart p2p
+        // geth starts in dev mode, we can spawn it, mine blocks, and shut it down we need to clone
+        // it because we will be reusing the geth config when we restart p2p
         let mut instance = geth.spawn();
 
-        // set up ethers provider
-        let geth_endpoint = SocketAddr::new([127, 0, 0, 1].into(), instance.port()).to_string();
-        let provider = Provider::<Http>::try_from(format!("http://{geth_endpoint}")).unwrap();
-        let provider =
-            SignerMiddleware::new_with_provider_chain(provider, wallet.clone()).await.unwrap();
+        // set up provider
+        let provider = produce_blocks(instance.port(), signing_key).await;
 
-        // === start geth and produce blocks ===
-
-        // first get the balance and make sure its not zero
-        let balance = provider.get_balance(our_address, None).await.unwrap();
-        assert_ne!(balance, 0u64.into());
-        println!("address: {our_address:?}");
-        println!("balance at genesis: {balance:?}");
-
-        // TODO: create transactions
-
-        // send the private key to geth and unlock it
-        let private_key = signing_key.to_bytes().to_vec().into();
-        println!("private key: {}", hex::encode(&private_key));
-        let unlocked_addr = provider.import_raw_key(private_key, "".to_string()).await.unwrap();
-        assert_eq!(unlocked_addr, our_address);
-
-        let unlock_success =
-            provider.unlock_account(our_address, "".to_string(), None).await.unwrap();
-        assert!(unlock_success);
-
-        // start mining?
-        provider.start_mining(None).await.unwrap();
-
-        // check that we are mining
-        let mining = provider.mining().await.unwrap();
-        assert!(mining);
-
-        // take the stderr of the geth instance and print it to see more about what geth is doing
-        // is it mining blocks? if so can we
+        // take the stderr of the geth instance and print it
         let stderr = instance.stderr().unwrap();
 
         // print logs in a new task
@@ -108,7 +117,8 @@ async fn sync_from_clique_geth() {
             }
         });
 
-        // TODO: remove
+        // TODO: remove when we convert to creating transactions rather than using a 1 second
+        // period
         // wait for stuff to happen (we are using period 1, so we expect about 10 blocks)
         tokio::time::sleep(Duration::from_secs(5)).await;
 
@@ -128,7 +138,7 @@ async fn sync_from_clique_geth() {
         let geth_genesis_header = block_to_header(genesis_block.clone()).seal();
         assert_eq!(geth_genesis_header, sealed_genesis, "genesis headers should match, we computed {sealed_genesis:#?} but geth computed {geth_genesis_header:#?}");
 
-        // make sure we have the same hash
+        // make sure we have the same genesis hash
         let genesis_hash: H256 = genesis_block.hash.unwrap().0.into();
         let sealed_hash = sealed_genesis.hash();
         assert_eq!(sealed_hash, genesis_hash, "genesis hashes should match, we computed {sealed_hash:?} but geth computed {genesis_hash:?}");
@@ -137,9 +147,6 @@ async fn sync_from_clique_geth() {
 
         let secret_key = SecretKey::new(&mut rand::thread_rng());
         let (reth_p2p, reth_disc) = unused_tcp_udp();
-
-        // get correct status using genesis information
-        let status = extract_status(&genesis);
 
         // may not need to set up a hello as we should be advertising compatible capabilities and
         // protocol versions anyways
@@ -152,6 +159,7 @@ async fn sync_from_clique_geth() {
             .genesis_hash(sealed_genesis.hash())
             .status(status)
             .build();
+
         let network = NetworkManager::new(config).await.unwrap();
 
         let handle = network.handle().clone();
@@ -169,7 +177,7 @@ async fn sync_from_clique_geth() {
         tokio::task::spawn(network);
 
         // create networkeventstream to get the next session established event easily
-        let mut events = handle.event_listener();
+        let mut events = NetworkEventStream::new(handle.event_listener());
         let geth_p2p_port = instance.p2p_port().unwrap();
         let geth_socket = SocketAddr::new([127, 0, 0, 1].into(), geth_p2p_port);
 
@@ -181,42 +189,9 @@ async fn sync_from_clique_geth() {
         // add geth as a peer then wait for `PeerAdded` and `SessionEstablished` events.
         handle.add_peer(geth_peer_id, geth_socket);
 
-        match events.next().await.expect("the network should emit at least one event") {
-            // TODO: should the first event be a peeradded, and the second to be a
-            // sessionestablished?
-            // or should we just wait for a PeerAdded and SessionEstablished event?
-            // I guess, is there any relationship between the event variants and their ordering?
-            NetworkEvent::SessionEstablished { peer_id, .. } => assert_eq!(peer_id, geth_peer_id),
-            NetworkEvent::SessionClosed { peer_id, reason } => {
-                panic!("Expected a session established event, got a session closed event instead: {peer_id:?} {reason:?}")
-            },
-            NetworkEvent::PeerAdded(peer_id) => {
-                assert_eq!(peer_id, geth_peer_id);
-            },
-            NetworkEvent::PeerRemoved(peer_id) => {
-                panic!("The first event from the network should not be a peer removed event: {peer_id:?}")
-            },
-        }
+        // wait for the session to be established
+        let peer_id = events.peer_added_and_established().await.unwrap();
 
-        // see TODO above ^. assuming the first event we get is a PeerAdded event, the second
-        // should be a SessionEstablished event
-        // TODO: these matches seem not great, also can we log the pending session authentication
-        // error here somehow?
-        match events.next().await.expect("the network should emit a second event") {
-            NetworkEvent::SessionEstablished { peer_id, .. } => assert_eq!(peer_id, geth_peer_id),
-            NetworkEvent::SessionClosed { peer_id, reason } => {
-                panic!("Expected a session established event, got a session closed event instead: {peer_id:?} {reason:?}")
-            },
-            NetworkEvent::PeerAdded(peer_id) => {
-                panic!("The second event from the network should not be a peer added event: {peer_id:?}")
-            },
-            NetworkEvent::PeerRemoved(peer_id) => {
-                panic!("The second event from the network should not be a peer removed event: {peer_id:?}")
-            },
-        }
-
-        // what kinds of events are we waiting for from reth? what kinds of assertions should we
-        // make?
     })
     .await
     .unwrap();

@@ -122,43 +122,42 @@ pub struct RethBuilder<DB> {
     tip: Option<H256>,
 }
 
-impl<DB> Default for RethBuilder<DB> {
-    fn default() -> Self {
-        Self { network: None, consensus: None, db: None, genesis: None, tip: None }
-    }
-}
-
 impl<DB> RethBuilder<DB> {
     /// Creates a new builder.
     pub fn new() -> Self {
-        Self::default()
+        Self { network: None, consensus: None, db: None, genesis: None, tip: None }
     }
 
     /// Sets the network handle.
+    #[must_use]
     pub fn network(mut self, network: NetworkHandle) -> Self {
         self.network = Some(network);
         self
     }
 
     /// Sets the consensus handle.
+    #[must_use]
     pub fn consensus(mut self, consensus: Arc<BeaconConsensus>) -> Self {
         self.consensus = Some(consensus);
         self
     }
 
     /// Sets the database handle.
+    #[must_use]
     pub fn db(mut self, db: Arc<DB>) -> Self {
         self.db = Some(db);
         self
     }
 
     /// Sets the genesis block and chain config.
+    #[must_use]
     pub fn genesis(mut self, genesis: Genesis) -> Self {
         self.genesis = Some(genesis);
         self
     }
 
     /// Sets the tip block hash for reverse download.
+    #[must_use]
     pub fn tip(mut self, tip: H256) -> Self {
         self.tip = Some(tip);
         self

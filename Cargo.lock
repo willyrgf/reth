@@ -4590,6 +4590,7 @@ dependencies = [
  "reth-stages",
  "reth-tracing",
  "secp256k1 0.24.3",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",
