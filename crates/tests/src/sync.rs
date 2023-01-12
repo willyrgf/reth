@@ -7,6 +7,7 @@ use ethers_core::types::U64;
 use ethers_middleware::SignerMiddleware;
 use ethers_providers::{Http, Middleware, Provider};
 use ethers_signers::{LocalWallet, Signer, Wallet};
+use reth_cli_utils::init::init_db;
 use reth_db::mdbx::{Env, WriteMap};
 use reth_net_test_utils::{enr_to_peer_id, unused_tcp_udp, NetworkEventStream, GETH_TIMEOUT};
 use reth_network::{NetworkConfig, NetworkManager};
@@ -76,7 +77,7 @@ async fn sync_from_clique_geth() {
     tokio::time::timeout(GETH_TIMEOUT, async move {
         // first create a signer that we will fund so we can make transactions
         let chain_id = 13337u64;
-        let data_dir = tempfile::tempdir().expect("should create temp dir");
+        let data_dir = tempfile::tempdir().expect("should be able to create temp geth datadir");
 
         // print datadir for debugging and make sure to persist the dir
         let dir_path = data_dir.into_path();
@@ -164,9 +165,13 @@ async fn sync_from_clique_geth() {
 
         let handle = network.handle().clone();
 
+        // initialize db and consensus
+        let reth_temp_dir = tempfile::tempdir().expect("should be able to create reth data dir");
+        let db = Arc::new(init_db(reth_temp_dir.path()).unwrap());
+
         // build reth and start the pipeline
         let reth: RethTestInstance<Env<WriteMap>> = RethBuilder::new()
-            // .db(db)
+            .db(db)
             // .consensus(consensus)
             // .genesis(genesis) // TODO: convert ethers genesis to reth genesis
             .network(handle.clone())
