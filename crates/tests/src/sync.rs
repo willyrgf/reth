@@ -73,7 +73,7 @@ async fn produce_blocks(
 
 #[tokio::test(flavor = "multi_thread")]
 async fn sync_from_clique_geth() {
-    reth_tracing::init_tracing();
+    reth_tracing::init_test_tracing();
     tokio::time::timeout(GETH_TIMEOUT, async move {
         // first create a signer that we will fund so we can make transactions
         let chain_id = 13337u64;
