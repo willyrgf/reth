@@ -3,9 +3,11 @@ use crate::{
     reth_builder::{RethBuilder, RethTestInstance},
 };
 use enr::k256::ecdsa::SigningKey;
-use ethers_core::types::U64;
+use ethers_core::types::{
+    transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, H160, U64,
+};
 use ethers_middleware::SignerMiddleware;
-use ethers_providers::{Http, Middleware, Provider};
+use ethers_providers::{Middleware, Provider, Ws};
 use ethers_signers::{LocalWallet, Signer, Wallet};
 use reth_cli_utils::init::init_db;
 use reth_consensus::BeaconConsensus;
@@ -28,14 +30,14 @@ use tokio::task;
 async fn produce_blocks(
     rpc_port: u16,
     private_key: SigningKey,
-) -> SignerMiddleware<Provider<Http>, Wallet<SigningKey>> {
+) -> SignerMiddleware<Provider<Ws>, Wallet<SigningKey>> {
     // create the signer
     let wallet: LocalWallet = private_key.clone().into();
     let our_address = wallet.address();
 
     // set up ethers provider
     let geth_endpoint = SocketAddr::new([127, 0, 0, 1].into(), rpc_port).to_string();
-    let provider = Provider::<Http>::try_from(format!("http://{geth_endpoint}")).unwrap();
+    let provider = Provider::<Ws>::connect(format!("ws://{geth_endpoint}")).await.unwrap();
     let provider =
         SignerMiddleware::new_with_provider_chain(provider, wallet.clone()).await.unwrap();
 
@@ -44,8 +46,6 @@ async fn produce_blocks(
     assert_ne!(balance, 0u64.into());
     println!("address: {our_address:?}");
     println!("balance at genesis: {balance:?}");
-
-    // TODO: create transactions
 
     // send the private key to geth and unlock it
     let key_bytes = private_key.to_bytes().to_vec().into();
@@ -93,9 +93,6 @@ async fn sync_from_clique_geth() {
         // it because we will be reusing the geth config when we restart p2p
         let mut instance = geth.spawn();
 
-        // set up provider
-        let provider = produce_blocks(instance.port(), signing_key).await;
-
         // take the stderr of the geth instance and print it
         let stderr = instance.stderr().unwrap();
 
@@ -104,11 +101,11 @@ async fn sync_from_clique_geth() {
             let mut err_reader = BufReader::new(stderr);
 
             loop {
-                tokio::time::sleep(Duration::from_millis(10)).await;
 
                 let mut buf = String::new();
                 if let Ok(line) = err_reader.read_line(&mut buf) {
                     if line == 0 {
+                        tokio::time::sleep(Duration::from_nanos(1)).await;
                         continue
                     }
                     dbg!(buf);
@@ -116,15 +113,10 @@ async fn sync_from_clique_geth() {
             }
         });
 
-        // TODO: remove when we convert to creating transactions rather than using a 1 second
-        // period
-        // wait for stuff to happen (we are using period 1, so we expect about 10 blocks)
-        tokio::time::sleep(Duration::from_secs(5)).await;
+        // === check that we have the same genesis hash ===
 
-        // wait for a certain number of blocks to be mined
-        let block = provider.get_block_number().await.unwrap();
-        println!("block num before restarting geth: {block}");
-        assert!(block > U64::zero());
+        // set up provider
+        let provider = produce_blocks(instance.port(), signing_key).await;
 
         // get genesis hash
         let genesis_block =
@@ -141,6 +133,30 @@ async fn sync_from_clique_geth() {
         let genesis_hash: H256 = genesis_block.hash.unwrap().0.into();
         let sealed_hash = sealed_genesis.hash();
         assert_eq!(sealed_hash, genesis_hash, "genesis hashes should match, we computed {sealed_hash:?} but geth computed {genesis_hash:?}");
+
+        // === create many blocks ===
+
+        let nonces = 0..10000u64;
+        let txs = nonces
+            .map(|nonce| {
+                // create a tx that just sends to the zero addr
+                TypedTransaction::Eip1559(Eip1559TransactionRequest::new()
+                    .to(H160::zero())
+                    .value(1u64)
+                    .nonce(nonce))
+            });
+
+        for tx in txs {
+            // send the tx - geth will mine a block with just this transaction in it if we await
+            // here rather than joining concurrent sends
+            let tx_hash = provider.send_transaction(tx, None).await.unwrap();
+            println!("tx hash: {tx_hash:?}");
+        }
+
+        // wait for a certain number of blocks to be mined
+        let block = provider.get_block_number().await.unwrap();
+        println!("block num after creating transactions: {block}");
+        assert!(block > U64::zero());
 
         // === initialize reth networking stack ===
 
@@ -160,7 +176,6 @@ async fn sync_from_clique_geth() {
             .build();
 
         let network = NetworkManager::new(config).await.unwrap();
-
         let handle = network.handle().clone();
 
         // convert ethers genesis to chainspec
@@ -200,7 +215,6 @@ async fn sync_from_clique_geth() {
 
         // wait for the session to be established
         let _peer_id = events.peer_added_and_established().await.unwrap();
-
     })
     .await
     .unwrap();

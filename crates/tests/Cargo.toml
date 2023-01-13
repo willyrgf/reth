@@ -27,7 +27,7 @@ reth-provider = { path = "../storage/provider"}
 
 # ethers
 ethers-core = { git = "https://github.com/gakonst/ethers-rs", default-features = false }
-ethers-providers = { git = "https://github.com/gakonst/ethers-rs", default-features = false }
+ethers-providers = { git = "https://github.com/gakonst/ethers-rs", features = ["ws"], default-features = false }
 ethers-signers = { git = "https://github.com/gakonst/ethers-rs", default-features = false }
 ethers-middleware = { git = "https://github.com/gakonst/ethers-rs", default-features = false }
 

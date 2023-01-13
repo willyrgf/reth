@@ -194,8 +194,8 @@ fn extract_fork_blocks(genesis: &Genesis) -> Vec<u64> {
 ///
 /// Enables all hard forks up to London at genesis.
 pub(crate) fn genesis_funded(chain_id: u64, signer_addr: Address) -> Genesis {
-    // set up a clique config with a short (1s) period and short (8 block) epoch
-    let clique_config = CliqueConfig { period: 1, epoch: 8 };
+    // set up a clique config with an instant sealing period and short (8 block) epoch
+    let clique_config = CliqueConfig { period: 0, epoch: 8 };
 
     let config = ChainConfig {
         chain_id,
@@ -339,8 +339,8 @@ impl CliqueGethBuilder {
                 // overwrite the extraData field
                 let mut genesis = genesis;
 
-                // set up a clique config with a short (1s) period and short (8 block) epoch
-                let clique_config = CliqueConfig { period: 1, epoch: 8 };
+                // set up a clique config with an instant sealing period and short (8 block) epoch
+                let clique_config = CliqueConfig { period: 0, epoch: 8 };
                 genesis.config.clique = Some(clique_config);
 
                 // set the extraData field
