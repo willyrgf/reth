@@ -4,7 +4,7 @@ use crate::{
 };
 use enr::k256::ecdsa::SigningKey;
 use ethers_core::types::{
-    transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, H160, U64,
+    transaction::eip2718::TypedTransaction, BlockNumber, Eip1559TransactionRequest, H160, U64,
 };
 use ethers_middleware::SignerMiddleware;
 use ethers_providers::{Middleware, Provider, Ws};
@@ -23,7 +23,7 @@ use std::{
     sync::Arc,
     time::Duration,
 };
-use tokio::task;
+use tokio::{fs, task};
 
 /// Creates an ethers provider, passing the provided private key to `personal_importRawKey`,
 /// unlocking it, and starting block production by starting mining.
@@ -76,10 +76,7 @@ async fn sync_from_clique_geth() {
         // first create a signer that we will fund so we can make transactions
         let chain_id = 13337u64;
         let data_dir = tempfile::tempdir().expect("should be able to create temp geth datadir");
-
-        // print datadir for debugging and make sure to persist the dir
         let dir_path = data_dir.into_path();
-        println!("geth datadir: {dir_path:?}");
 
         // this creates a funded geth
         let clique_geth = CliqueGethBuilder::new()
@@ -149,14 +146,17 @@ async fn sync_from_clique_geth() {
         for tx in txs {
             // send the tx - geth will mine a block with just this transaction in it if we await
             // here rather than joining concurrent sends
-            let tx_hash = provider.send_transaction(tx, None).await.unwrap();
-            println!("tx hash: {tx_hash:?}");
+            provider.send_transaction(tx, None).await.unwrap();
         }
 
         // wait for a certain number of blocks to be mined
         let block = provider.get_block_number().await.unwrap();
         println!("block num after creating transactions: {block}");
         assert!(block > U64::zero());
+
+        // get the tip so we can send it to reth
+        let tip_block = provider.get_block(BlockNumber::Latest).await.unwrap().unwrap();
+        let tip_hash = tip_block.hash.unwrap().0.into();
 
         // === initialize reth networking stack ===
 
@@ -194,10 +194,11 @@ async fn sync_from_clique_geth() {
             .consensus(consensus)
             .genesis(chainspec.genesis)
             .network(handle.clone())
+            .tip(tip_hash)
             .build();
 
         // start reth then manually connect geth
-        tokio::task::spawn(async move { reth.start().await });
+        let pipeline_handle = tokio::task::spawn(async move { reth.start().await });
         tokio::task::spawn(network);
 
         // create networkeventstream to get the next session established event easily
@@ -215,6 +216,11 @@ async fn sync_from_clique_geth() {
 
         // wait for the session to be established
         let _peer_id = events.peer_added_and_established().await.unwrap();
+
+        pipeline_handle.await.unwrap().unwrap();
+
+        // cleanup (delete the data_dir at dir_path)
+        fs::remove_dir_all(dir_path).await.unwrap();
     })
     .await
     .unwrap();
