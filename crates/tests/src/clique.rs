@@ -16,6 +16,12 @@ use std::collections::HashMap;
 /// Converts an ethers [`Genesis`] into a reth
 /// [`ChainSpecification`](reth_cli_utils::chainspec::ChainSpecification).
 pub(crate) fn genesis_to_chainspec(genesis: &Genesis) -> ChainSpecification {
+    let alloc = genesis
+        .alloc
+        .iter()
+        .map(|(addr, account)| (addr.0.into(), convert_genesis_account(account)))
+        .collect::<HashMap<H160, _>>();
+
     ChainSpecification {
         consensus: ConsensusConfig {
             chain_id: genesis.config.chain_id,
@@ -37,7 +43,7 @@ pub(crate) fn genesis_to_chainspec(genesis: &Genesis) -> ChainSpecification {
                 .terminal_total_difficulty
                 .unwrap_or_default()
                 .as_u128(),
-            ..Default::default() // TODO: remove paris block as the hard fork is determined by ttd?
+            ..Default::default() // TODO: remove paris block then remove this
         },
         genesis: RethGenesis {
             nonce: genesis.nonce.as_u64(),
@@ -46,14 +52,9 @@ pub(crate) fn genesis_to_chainspec(genesis: &Genesis) -> ChainSpecification {
             difficulty: genesis.difficulty.into(),
             mix_hash: genesis.mix_hash.0.into(),
             coinbase: genesis.coinbase.0.into(),
-            // state_root: genesis.state_root, TODO: remove state_root from genesis
-            alloc: genesis
-                .alloc
-                .iter()
-                .map(|(addr, account)| (addr.0.into(), convert_genesis_account(account)))
-                .collect::<HashMap<H160, _>>(),
+            state_root: genesis_state_root(alloc.clone()),
             extra_data: genesis.extra_data.0.clone().into(),
-            ..Default::default()
+            alloc,
         },
     }
 }
