@@ -841,6 +841,8 @@ mod tests {
                 self.requests = headers.into_iter().cloned().collect::<Vec<_>>();
                 self.start = self.requests.iter().peekable().next().unwrap().number;
                 self.end = self.requests.iter().last().unwrap().number;
+                // reverse them so that pop'ing in the Stream pops the first item
+                self.requests.reverse();
             }
 
             fn bodies_in_progress(&self) -> (BlockNumber, BlockNumber) {
