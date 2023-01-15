@@ -87,7 +87,7 @@ impl<DB: Database, D: BodyDownloader, C: Consensus> Stage<DB> for BodyStage<D, C
         // NB: exec_or_return will return `end_block` set by the `commit_threshold`, so instead we
         // should use `input.previous_stage_progress()`
         let end_block_downloader = input.previous_stage_progress();
-        if (start_block, end_block_downloader) != self.downloader.bodies_in_progress() {
+        if end_block_downloader != self.downloader.bodies_in_progress().1 {
             let bodies_to_download =
                 self.bodies_to_download::<DB>(tx, start_block, end_block_downloader)?;
             // Queue up the following bodies to be downloaded
