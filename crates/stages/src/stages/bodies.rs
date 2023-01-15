@@ -81,7 +81,18 @@ impl<DB: Database, D: BodyDownloader, C: Consensus> Stage<DB> for BodyStage<D, C
         let ((start_block, end_block), capped) =
             exec_or_return!(input, self.commit_threshold, "sync::stages::bodies");
 
-        let bodies_to_download = self.bodies_to_download::<DB>(tx, start_block, end_block)?;
+        // If the downloader isn't already downloading the start/end range.
+        // queue up the blocks for downloading
+        //
+        // NB: exec_or_return will return `end_block` set by the `commit_threshold`, so instead we
+        // should use `input.previous_stage_progress()`
+        let end_block_downloader = input.previous_stage_progress();
+        if (start_block, end_block_downloader) != self.downloader.bodies_in_progress() {
+            let bodies_to_download =
+                self.bodies_to_download::<DB>(tx, start_block, end_block_downloader)?;
+            // Queue up the following bodies to be downloaded
+            self.downloader.buffer_body_requests(bodies_to_download.iter());
+        }
 
         // Cursors used to write bodies, ommers and transactions
         let mut body_cursor = tx.cursor_write::<tables::BlockBodies>()?;
@@ -95,12 +106,10 @@ impl<DB: Database, D: BodyDownloader, C: Consensus> Stage<DB> for BodyStage<D, C
         // Get id for the first transaction and first transition in the block
         let (mut current_tx_id, mut transition_id) = tx.get_next_block_ids(start_block)?;
 
-        // NOTE(onbjerg): The stream needs to live here otherwise it will just create a new iterator
-        // on every iteration of the while loop -_-
-        let mut bodies_stream = self.downloader.bodies_stream(bodies_to_download.iter());
         let mut highest_block = input.stage_progress.unwrap_or_default();
+
         debug!(target: "sync::stages::bodies", stage_progress = highest_block, target = end_block, start_tx_id = current_tx_id, transition_id, "Commencing sync");
-        while let Some(result) = bodies_stream.next().await {
+        while let Some(result) = self.downloader.next().await {
             let Ok(response) = result else {
                 error!(target: "sync::stages::bodies", block = highest_block + 1, error = ?result.unwrap_err(), "Error downloading block");
                 return Ok(ExecOutput {
@@ -167,6 +176,14 @@ impl<DB: Database, D: BodyDownloader, C: Consensus> Stage<DB> for BodyStage<D, C
             block_transition_cursor.append(numhash, transition_id)?;
 
             highest_block = numhash.number();
+
+            // if we've reached the end of the commit threshold, exit the stream
+            // loop, so we can commit. the next time the `bodies_in_progress` check
+            // should prevent us from queueing up new blocks and will set a new
+            // `start_block`
+            if highest_block == end_block {
+                break
+            }
         }
 
         // The stage is "done" if:
