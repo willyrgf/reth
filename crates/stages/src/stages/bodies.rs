@@ -535,6 +535,7 @@ mod tests {
             ExecInput, ExecOutput, UnwindInput,
         };
         use assert_matches::assert_matches;
+        use futures_util::Stream;
         use reth_db::{
             cursor::DbCursorRO,
             models::{BlockNumHash, StoredBlockBody, StoredBlockOmmers},
@@ -548,7 +549,7 @@ mod tests {
                     client::BodiesClient,
                     downloader::{BlockResponse, BodyDownloader},
                 },
-                downloader::{DownloadClient, DownloadStream, Downloader},
+                downloader::{DownloadClient, Downloader},
                 error::{DownloadResult, PeerRequestResult},
             },
             test_utils::{
@@ -614,7 +615,7 @@ mod tests {
 
             fn stage(&self) -> Self::S {
                 BodyStage {
-                    downloader: Arc::new(TestBodyDownloader::new(self.responses.clone())),
+                    downloader: TestBodyDownloader::new(self.responses.clone()),
                     consensus: self.consensus.clone(),
                     commit_threshold: self.batch_size,
                 }
@@ -805,12 +806,15 @@ mod tests {
         /// A [BodyDownloader] that is backed by an internal [HashMap] for testing.
         #[derive(Debug, Default, Clone)]
         pub(crate) struct TestBodyDownloader {
+            requests: Vec<SealedHeader>,
             responses: HashMap<H256, DownloadResult<BlockBody>>,
+            start: u64,
+            end: u64,
         }
 
         impl TestBodyDownloader {
             pub(crate) fn new(responses: HashMap<H256, DownloadResult<BlockBody>>) -> Self {
-                Self { responses }
+                Self { responses, ..Default::default() }
             }
         }
 
@@ -828,24 +832,47 @@ mod tests {
         }
 
         impl BodyDownloader for TestBodyDownloader {
-            fn bodies_stream<'a, 'b, I>(&'a self, hashes: I) -> DownloadStream<'a, BlockResponse>
+            fn buffer_body_requests<'a, 'b, I>(&mut self, headers: I)
             where
                 I: IntoIterator<Item = &'b SealedHeader>,
                 <I as IntoIterator>::IntoIter: Send + 'b,
                 'b: 'a,
             {
-                Box::pin(futures_util::stream::iter(hashes.into_iter().map(|header| {
-                    let result = self
-                        .responses
-                        .get(&header.hash())
-                        .expect("Stage tried downloading a block we do not have.")
-                        .clone()?;
-                    Ok(BlockResponse::Full(SealedBlock {
-                        header: header.clone(),
-                        body: result.transactions,
-                        ommers: result.ommers.into_iter().map(|header| header.seal()).collect(),
-                    }))
-                })))
+                self.requests = headers.into_iter().cloned().collect::<Vec<_>>();
+                self.start = self.requests.iter().peekable().next().unwrap().number;
+                self.end = self.requests.iter().last().unwrap().number;
+            }
+
+            fn bodies_in_progress(&self) -> (BlockNumber, BlockNumber) {
+                (self.start, self.end)
+            }
+        }
+
+        use std::{
+            pin::Pin,
+            task::{Context, Poll},
+        };
+
+        impl Stream for TestBodyDownloader {
+            type Item = DownloadResult<BlockResponse>;
+
+            fn poll_next(
+                mut self: Pin<&mut Self>,
+                _cx: &mut Context<'_>,
+            ) -> Poll<Option<Self::Item>> {
+                let header = self.requests.pop();
+                let resp = header.map(|header| {
+                    let result =
+                        self.responses.get(&header.hash()).expect("no body found for hash").clone();
+                    result.map(|body| {
+                        BlockResponse::Full(SealedBlock {
+                            header: header.clone(),
+                            body: body.transactions,
+                            ommers: body.ommers.into_iter().map(|header| header.seal()).collect(),
+                        })
+                    })
+                });
+                Poll::Ready(resp)
             }
         }
     }
