@@ -151,15 +151,13 @@ impl Command {
                 commit_threshold: config.stages.total_difficulty.commit_threshold,
             })
             .push(BodyStage {
-                downloader: Arc::new(
-                    bodies::concurrent::ConcurrentDownloader::new(
-                        fetch_client.clone(),
-                        consensus.clone(),
-                    )
-                    .with_batch_size(config.stages.bodies.downloader_batch_size)
-                    .with_retries(config.stages.bodies.downloader_retries)
-                    .with_concurrency(config.stages.bodies.downloader_concurrency),
-                ),
+                downloader: bodies::concurrent::ConcurrentDownloader::new(
+                    fetch_client.clone(),
+                    consensus.clone(),
+                )
+                .with_batch_size(config.stages.bodies.downloader_batch_size)
+                .with_retries(config.stages.bodies.downloader_retries)
+                .with_concurrency(config.stages.bodies.downloader_concurrency),
                 consensus: consensus.clone(),
                 commit_threshold: config.stages.bodies.commit_threshold,
             })

@@ -54,7 +54,7 @@ pub(crate) const BODIES: StageId = StageId("Bodies");
 #[derive(Debug)]
 pub struct BodyStage<D: BodyDownloader, C: Consensus> {
     /// The body downloader.
-    pub downloader: Arc<D>,
+    pub downloader: D,
     /// The consensus engine.
     pub consensus: Arc<C>,
     /// The maximum amount of block bodies to process in one stage execution.
