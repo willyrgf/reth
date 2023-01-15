@@ -1,5 +1,6 @@
-use crate::p2p::downloader::{DownloadStream, Downloader};
-use reth_primitives::{SealedBlock, SealedHeader};
+use crate::p2p::{downloader::Downloader, error::DownloadError};
+use futures::Stream;
+use reth_primitives::{BlockNumber, SealedBlock, SealedHeader};
 
 /// The block response
 #[derive(PartialEq, Eq, Debug)]
@@ -24,11 +25,13 @@ impl BlockResponse {
 ///
 /// A downloader represents a distinct strategy for submitting requests to download block bodies,
 /// while a [BodiesClient] represents a client capable of fulfilling these requests.
-pub trait BodyDownloader: Downloader {
-    /// Download the bodies from `starting_block` (inclusive) up until `target_block` (inclusive).
+pub trait BodyDownloader:
+    Downloader + Stream<Item = Result<BlockResponse, DownloadError>> + Unpin
+{
+    /// Buffers the bodies from `starting_block` (inclusive) up until `target_block` (inclusive).
     ///
-    /// The returned stream will always emit bodies in the order they were requested, but multiple
-    /// requests may be in flight at the same time.
+    /// The downloader's stream will always emit bodies in the order they were requested, but
+    /// multiple requests may be in flight at the same time.
     ///
     /// The stream may exit early in some cases. Thus, a downloader can only at a minimum guarantee:
     ///
@@ -38,9 +41,12 @@ pub trait BodyDownloader: Downloader {
     ///
     /// It is *not* guaranteed that all the requested bodies are fetched: the downloader may close
     /// the stream before the entire range has been fetched for any reason
-    fn bodies_stream<'a, 'b, I>(&'a self, headers: I) -> DownloadStream<'a, BlockResponse>
+    fn buffer_body_requests<'a, 'b, I>(&'a mut self, headers: I)
     where
         I: IntoIterator<Item = &'b SealedHeader>,
         <I as IntoIterator>::IntoIter: Send + 'b,
         'b: 'a;
+
+    /// Returns the current range that the downloader is syncing and will expose over its stream
+    fn bodies_in_progress(&self) -> (BlockNumber, BlockNumber);
 }
