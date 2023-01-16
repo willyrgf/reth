@@ -1,17 +1,27 @@
 use enr::k256::ecdsa::SigningKey;
 use ethers_core::{
-    types::{Address, Block, Bytes, U64},
-    utils::{ChainConfig, CliqueConfig, Genesis, GenesisAccount, Geth},
+    types::{
+        transaction::eip2718::TypedTransaction, Address, Block, BlockNumber, Bytes, H256, U64,
+    },
+    utils::{ChainConfig, CliqueConfig, Genesis, GenesisAccount, Geth, GethInstance},
 };
-use ethers_signers::{LocalWallet, Signer};
+use ethers_middleware::SignerMiddleware;
+use ethers_providers::{Middleware, Provider, Ws};
+use ethers_signers::{LocalWallet, Signer, Wallet};
 use reth_cli_utils::chainspec::{ChainSpecification, Genesis as RethGenesis};
 use reth_consensus::Config as ConsensusConfig;
 use reth_eth_wire::{EthVersion, Status};
-use reth_net_test_utils::unused_port;
+use reth_net_test_utils::{enr_to_peer_id, unused_port};
 use reth_primitives::{
-    proofs::genesis_state_root, Chain, ForkHash, ForkId, Header, H160, INITIAL_BASE_FEE,
+    proofs::genesis_state_root, Chain, ForkHash, ForkId, Header, PeerId, H160, INITIAL_BASE_FEE,
 };
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    io::{BufRead, BufReader},
+    net::SocketAddr,
+    time::Duration,
+};
+use tracing::trace;
 
 /// Converts an ethers [`Genesis`] into a reth
 /// [`ChainSpecification`](reth_cli_utils::chainspec::ChainSpecification).
@@ -37,7 +47,6 @@ pub(crate) fn genesis_to_chainspec(genesis: &Genesis) -> ChainSpecification {
             istanbul_block: genesis.config.istanbul_block.unwrap_or_default(),
             berlin_block: genesis.config.berlin_block.unwrap_or_default(),
             london_block: genesis.config.london_block.unwrap_or_default(),
-            // paris_block: genesis.config.paris_block.unwrap_or_default(),
             merge_terminal_total_difficulty: genesis
                 .config
                 .terminal_total_difficulty
@@ -323,7 +332,7 @@ impl CliqueGethBuilder {
     ///
     /// Returns the [`Geth`], a compatible [`Status`](reth_eth_wire::types::Status), the computed
     /// [`Genesis`](ethers_core::utils::Genesis) and the [`SigningKey`] created for signing blocks.
-    pub(crate) fn build(self) -> (Geth, Status, Genesis, SigningKey) {
+    pub(crate) async fn build(self) -> CliqueGethInstance {
         let signer = match self.signer {
             Some(private_key) => SigningKey::from_bytes(&private_key).expect("invalid private key"),
             None => SigningKey::random(&mut rand::thread_rng()),
@@ -369,6 +378,147 @@ impl CliqueGethBuilder {
         // create a compatible status
         let status = extract_status(&genesis);
 
-        (geth, status, genesis, signer)
+        CliqueGethInstance::new(geth, signer, status, genesis).await
+    }
+}
+
+/// A [`Geth`](ethers_core::utils::Geth) instance configured with Clique and a custom
+/// [`Genesis`](ethers_core::utils::Genesis).
+///
+/// This holds a [`SignerMiddleware`](ethers_middleware::signer_middleware::SignerMiddleware) for
+/// enabling block production and creating transactions.
+pub(crate) struct CliqueGethInstance {
+    instance: GethInstance,
+    signer: SigningKey,
+    pub(crate) status: Status,
+    pub(crate) genesis: Genesis,
+    pub(crate) provider: SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>,
+}
+
+impl CliqueGethInstance {
+    /// Sets up a new [`SignerMiddleware`](ethers_middleware::signer_middleware::SignerMiddleware)
+    /// for the [`Geth`](ethers_core::utils::Geth) instance and returns the
+    /// [`CliqueGethInstance`].
+    ///
+    /// The signer is assumed to be the clique signer and the signer for any transactions sent for
+    /// block production.
+    ///
+    /// This also spawns the geth instance.
+    pub(crate) async fn new(
+        geth: Geth,
+        signer: SigningKey,
+        status: Status,
+        genesis: Genesis,
+    ) -> Self {
+        // spawn the geth instance
+        let instance = geth.spawn();
+
+        // create the signer
+        let wallet: LocalWallet = signer.clone().into();
+
+        // set up ethers provider
+        let geth_endpoint = SocketAddr::new([127, 0, 0, 1].into(), instance.port()).to_string();
+        let provider = Provider::<Ws>::connect(format!("ws://{geth_endpoint}")).await.unwrap();
+        let provider =
+            SignerMiddleware::new_with_provider_chain(provider, wallet.clone()).await.unwrap();
+
+        Self { instance, signer, status, genesis, provider }
+    }
+
+    /// Enable mining on the clique geth instance by importing and unlocking the signer account
+    /// with the given password and starting mining.
+    pub(crate) async fn enable_mining(&self, password: String) {
+        let our_address = self.provider.address();
+
+        // send the private key to geth and unlock it
+        let key_bytes = self.signer.to_bytes().to_vec().into();
+        trace!(
+            private_key=%hex::encode(&key_bytes),
+            "Importing private key"
+        );
+
+        let unlocked_addr =
+            self.provider.import_raw_key(key_bytes, password.to_string()).await.unwrap();
+        assert_eq!(unlocked_addr, our_address);
+
+        let unlock_success =
+            self.provider.unlock_account(our_address, password.to_string(), None).await.unwrap();
+        assert!(unlock_success);
+
+        // start mining?
+        self.provider.start_mining(None).await.unwrap();
+
+        // check that we are mining
+        let mining = self.provider.mining().await.unwrap();
+        assert!(mining);
+    }
+
+    /// Prints the logs of the [`Geth`](ethers_core::utils::Geth) instance in a new
+    /// [`task`](tokio::task).
+    pub(crate) fn print_logs(&mut self) {
+        // take the stderr of the geth instance and print it
+        let stderr = self.instance.stderr().unwrap();
+
+        // print logs in a new task
+        tokio::task::spawn(async move {
+            let mut err_reader = BufReader::new(stderr);
+
+            loop {
+                let mut buf = String::new();
+                if let Ok(line) = err_reader.read_line(&mut buf) {
+                    if line == 0 {
+                        tokio::time::sleep(Duration::from_nanos(1)).await;
+                        continue
+                    }
+                    dbg!(buf);
+                }
+            }
+        });
+    }
+
+    /// Signs and sends the given unsigned transactions sequentially, signing with the private key
+    /// used to configure the [`CliqueGethInstance`].
+    pub(crate) async fn send_requests(&self, txs: impl IntoIterator<Item = TypedTransaction>) {
+        for tx in txs {
+            self.provider.send_transaction(tx, None).await.unwrap();
+        }
+    }
+
+    /// Returns the [`Geth`](ethers_core::utils::Geth) instance p2p port.
+    pub(crate) fn p2p_port(&self) -> u16 {
+        self.instance.p2p_port().unwrap()
+    }
+
+    /// Returns the [`Geth`](ethers_core::utils::Geth) instance [`PeerId`](reth_primitives::PeerId).
+    pub(crate) async fn peer_id(&self) -> PeerId {
+        enr_to_peer_id(self.provider.node_info().await.unwrap().enr)
+    }
+
+    /// Returns the genesis block of the [`Geth`](ethers_core::utils::Geth).
+    pub(crate) async fn genesis(&self) -> Block<H256> {
+        self.provider
+            .get_block(BlockNumber::Earliest)
+            .await
+            .unwrap()
+            .expect("a genesis block should exist")
+    }
+
+    /// Returns the chain tip of the [`Geth`](ethers_core::utils::Geth) instance.
+    pub(crate) async fn tip(&self) -> Block<H256> {
+        self.provider
+            .get_block(BlockNumber::Latest)
+            .await
+            .unwrap()
+            .expect("a chain tip should exist")
+    }
+
+    /// Returns the chain tip hash of the [`Geth`](ethers_core::utils::Geth) instance.
+    pub(crate) async fn tip_hash(&self) -> reth_primitives::H256 {
+        self.tip().await.hash.unwrap().0.into()
+    }
+
+    /// Returns the genesis hash of the [`Geth`](ethers_core::utils::Geth) instance.
+    pub(crate) async fn genesis_hash(&self) -> reth_primitives::H256 {
+        self.genesis().await.hash.unwrap().0.into()
     }
 }
