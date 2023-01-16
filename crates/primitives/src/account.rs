@@ -59,6 +59,7 @@ impl Encodable for GenesisAccount {
         // RLP header length + payload length
         len + length_of_length(len)
     }
+
     fn encode(&self, out: &mut dyn bytes::BufMut) {
         let header = Header { list: true, payload_length: self.payload_len() };
         header.encode(out);
