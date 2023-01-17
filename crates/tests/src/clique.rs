@@ -187,6 +187,7 @@ impl CliqueGethBuilder {
     /// If no private key is provided, a random one will be generated. The generated key will also
     /// be funded with the maximum amount of coins in the genesis block.
     #[must_use]
+    #[allow(dead_code)]
     pub(crate) fn with_signer(mut self, private_key: Bytes) -> Self {
         self.signer = Some(private_key);
         self
@@ -196,6 +197,7 @@ impl CliqueGethBuilder {
     /// If no genesis is provided, one will be generated with forks up to London enabled at block
     /// zero.
     #[must_use]
+    #[allow(dead_code)]
     pub(crate) fn with_genesis(mut self, genesis: Genesis) -> Self {
         self.genesis = Some(genesis);
         self
@@ -265,10 +267,10 @@ impl CliqueGethBuilder {
 /// enabling block production and creating transactions.
 pub(crate) struct CliqueGethInstance {
     /// The spawned [`GethInstance`](ethers_core::utils::GethInstance).
-    instance: GethInstance,
+    pub(crate) instance: GethInstance,
 
     /// The private key used for signing clique blocks and transactions.
-    signer: SigningKey,
+    pub(crate) signer: SigningKey,
 
     /// The [`Status`](reth_eth_wire::Status) extracted from the configured geth
     /// [`Genesis`](ethers_core::utils::Genesis).
@@ -410,6 +412,7 @@ impl CliqueGethInstance {
 
     /// Returns the genesis hash of the [`Geth`](ethers_core::utils::Geth) instance by calling
     /// geth's `eth_getBlock`.
+    #[allow(dead_code)]
     pub(crate) async fn genesis_hash(&self) -> reth_primitives::H256 {
         self.genesis().await.hash.unwrap().0.into()
     }

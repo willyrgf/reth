@@ -6,14 +6,7 @@
 ))]
 
 //! Integration tests and test helpers for reth.
-#[cfg(test)]
 mod clique;
-
-#[cfg(test)]
 mod sync;
-
-#[cfg(test)]
 mod reth_builder;
-
-#[cfg(test)]
 mod stage_config;

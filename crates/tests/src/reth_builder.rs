@@ -174,6 +174,7 @@ impl<DB> RethBuilder<DB> {
 
     /// Sets the stage config.
     #[must_use]
+    #[allow(dead_code)]
     pub(crate) fn stage_config(mut self, stage_config: StageConfig) -> Self {
         self.stage_config = Some(stage_config);
         self
