@@ -4330,6 +4330,7 @@ dependencies = [
  "reth-interfaces",
  "reth-metrics-derive",
  "reth-net-common",
+ "reth-network",
  "reth-network-api",
  "reth-primitives",
  "reth-provider",

@@ -74,6 +74,9 @@ reth-interfaces = { path = "../../interfaces", features = ["test-utils"] }
 reth-provider = { path = "../../storage/provider", features = ["test-utils"] }
 reth-tracing = { path = "../../tracing" }
 reth-transaction-pool = { path = "../../transaction-pool", features = ["test-utils"] }
+# we need to enable the test-utils feature in our own crate to use utils in
+# integration tests
+reth-network = { path = ".", features = ["test-utils"] }
 
 ethers-core = { git = "https://github.com/gakonst/ethers-rs", default-features = false }
 ethers-providers = { git = "https://github.com/gakonst/ethers-rs", default-features = false }
