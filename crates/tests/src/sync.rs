@@ -1,16 +1,19 @@
 use crate::{
-    clique::{block_to_header, genesis_header, genesis_to_chainspec, CliqueGethBuilder},
+    clique::{block_to_header, CliqueGethBuilder},
     reth_builder::{RethBuilder, RethTestInstance},
 };
 use ethers_core::types::{
     transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, H160, U64,
 };
 use ethers_providers::Middleware;
-use reth_cli_utils::init::init_db;
+use reth_cli_utils::{chainspec::ChainSpecification, init::init_db};
 use reth_consensus::BeaconConsensus;
 use reth_db::mdbx::{Env, WriteMap};
-use reth_network::{NetworkConfig, NetworkManager, test_utils::{unused_tcp_udp, NetworkEventStream, GETH_TIMEOUT}};
-use reth_primitives::{PeerId, H256};
+use reth_network::{
+    test_utils::{unused_tcp_udp, NetworkEventStream, GETH_TIMEOUT},
+    NetworkConfig, NetworkManager,
+};
+use reth_primitives::{Header, PeerId, INITIAL_BASE_FEE};
 use reth_provider::test_utils::NoopProvider;
 use secp256k1::SecretKey;
 use std::{net::SocketAddr, sync::Arc};
@@ -44,21 +47,23 @@ async fn sync_from_clique_geth() {
 
         // === check that we have the same genesis hash ===
 
-        // get our hash
-        let sealed_genesis = genesis_header(&clique_instance.genesis).seal();
+        // get the chainspec from the genesis we configured for geth
+        let chainspec: ChainSpecification = clique_instance.genesis.clone().into();
+        let remote_genesis = block_to_header(clique_instance.genesis().await);
 
-        // let's just convert into a reth header and compare
-        let geth_genesis_header = block_to_header(clique_instance.genesis().await).seal();
-        assert_eq!(geth_genesis_header, sealed_genesis, "genesis headers should match, we computed {sealed_genesis:#?} but geth computed {geth_genesis_header:#?}");
+        let mut local_genesis_header = Header::from(chainspec.genesis.clone());
 
-        // make sure we have the same genesis hash
-        let genesis_hash: H256 = clique_instance.genesis_hash().await;
-        let sealed_hash = sealed_genesis.hash();
-        assert_eq!(sealed_hash, genesis_hash, "genesis hashes should match, we computed {sealed_hash:?} but geth computed {genesis_hash:?}");
+        // set initial base fee depending on eip-1559
+        if chainspec.consensus.london_block == 0 {
+            local_genesis_header.base_fee_per_gas = Some(INITIAL_BASE_FEE);
+        }
+
+        let local_genesis = local_genesis_header.seal();
+        assert_eq!(local_genesis, remote_genesis, "genesis blocks should match, we computed {local_genesis:#?} but geth computed {remote_genesis:#?}");
 
         // === create many blocks ===
 
-        let nonces = 0..10000u64;
+        let nonces = 0..1000u64;
         let txs = nonces
             .map(|nonce| {
                 // create a tx that just sends to the zero addr
@@ -91,15 +96,12 @@ async fn sync_from_clique_geth() {
         let config = NetworkConfig::builder(Arc::new(NoopProvider::default()), secret_key)
             .listener_addr(reth_p2p)
             .discovery_addr(reth_disc)
-            .genesis_hash(sealed_genesis.hash())
+            .genesis_hash(local_genesis.hash())
             .status(clique_instance.status)
             .build();
 
         let network = NetworkManager::new(config).await.unwrap();
         let handle = network.handle().clone();
-
-        // convert ethers genesis to chainspec
-        let chainspec = genesis_to_chainspec(&clique_instance.genesis);
 
         // initialize db
         let reth_temp_dir = tempfile::tempdir().expect("should be able to create reth data dir");

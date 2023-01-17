@@ -3957,6 +3957,7 @@ dependencies = [
 name = "reth-cli-utils"
 version = "0.1.0"
 dependencies = [
+ "ethers-core",
  "eyre",
  "reth-consensus",
  "reth-db",

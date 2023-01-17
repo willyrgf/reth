@@ -1,12 +1,12 @@
 //! A network implementation for testing purposes.
 
-use futures::{FutureExt, StreamExt};
-use pin_project::pin_project;
-use reth_eth_wire::DisconnectReason;
 use crate::{
     error::NetworkError, eth_requests::EthRequestHandler, NetworkConfig, NetworkEvent,
     NetworkHandle, NetworkManager,
 };
+use futures::{FutureExt, StreamExt};
+use pin_project::pin_project;
+use reth_eth_wire::DisconnectReason;
 use reth_primitives::PeerId;
 use reth_provider::{test_utils::NoopProvider, BlockProvider, HeaderProvider};
 use secp256k1::SecretKey;
@@ -355,4 +355,3 @@ impl NetworkEventStream {
         }
     }
 }
-

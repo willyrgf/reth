@@ -8,13 +8,10 @@ use ethers_core::{
 use ethers_middleware::SignerMiddleware;
 use ethers_providers::{Middleware, Provider, Ws};
 use ethers_signers::{LocalWallet, Signer, Wallet};
-use reth_cli_utils::chainspec::{ChainSpecification, Genesis as RethGenesis};
-use reth_consensus::Config as ConsensusConfig;
+use reth_cli_utils::chainspec::ChainSpecification;
 use reth_eth_wire::{EthVersion, Status};
 use reth_network::test_utils::{enr_to_peer_id, unused_port};
-use reth_primitives::{
-    proofs::genesis_state_root, Chain, ForkHash, ForkId, Header, PeerId, H160, INITIAL_BASE_FEE,
-};
+use reth_primitives::{Chain, ForkId, Header, PeerId, SealedHeader, INITIAL_BASE_FEE};
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader},
@@ -23,125 +20,23 @@ use std::{
 };
 use tracing::trace;
 
-/// Converts an ethers [`Genesis`] into a reth
-/// [`ChainSpecification`](reth_cli_utils::chainspec::ChainSpecification).
-pub(crate) fn genesis_to_chainspec(genesis: &Genesis) -> ChainSpecification {
-    let alloc = genesis
-        .alloc
-        .iter()
-        .map(|(addr, account)| (addr.0.into(), convert_genesis_account(account)))
-        .collect::<HashMap<H160, _>>();
-
-    ChainSpecification {
-        consensus: ConsensusConfig {
-            chain_id: genesis.config.chain_id,
-            homestead_block: genesis.config.homestead_block.unwrap_or_default(),
-            dao_fork_block: genesis.config.dao_fork_block.unwrap_or_default(),
-            dao_fork_support: genesis.config.dao_fork_support,
-            eip_150_block: genesis.config.eip150_block.unwrap_or_default(),
-            eip_155_block: genesis.config.eip155_block.unwrap_or_default(),
-            eip_158_block: genesis.config.eip158_block.unwrap_or_default(),
-            byzantium_block: genesis.config.byzantium_block.unwrap_or_default(),
-            petersburg_block: genesis.config.petersburg_block.unwrap_or_default(),
-            constantinople_block: genesis.config.constantinople_block.unwrap_or_default(),
-            istanbul_block: genesis.config.istanbul_block.unwrap_or_default(),
-            berlin_block: genesis.config.berlin_block.unwrap_or_default(),
-            london_block: genesis.config.london_block.unwrap_or_default(),
-            merge_terminal_total_difficulty: genesis
-                .config
-                .terminal_total_difficulty
-                .unwrap_or_default()
-                .as_u128(),
-            ..Default::default() // TODO: remove paris block then remove this
-        },
-        genesis: RethGenesis {
-            nonce: genesis.nonce.as_u64(),
-            timestamp: genesis.timestamp.as_u64(),
-            gas_limit: genesis.gas_limit.as_u64(),
-            difficulty: genesis.difficulty.into(),
-            mix_hash: genesis.mix_hash.0.into(),
-            coinbase: genesis.coinbase.0.into(),
-            state_root: genesis_state_root(alloc.clone()),
-            extra_data: genesis.extra_data.0.clone().into(),
-            alloc,
-        },
-    }
-}
-
-/// Extracts the genesis block header from an ethers [`Genesis`](ethers_core::utils::Genesis).
-pub(crate) fn genesis_header(genesis: &Genesis) -> Header {
-    let genesis_alloc = genesis.alloc.clone();
-    // convert to reth genesis alloc map
-    let reth_alloc = genesis_alloc
-        .into_iter()
-        .map(|(address, account)| (address.0.into(), convert_genesis_account(&account)))
-        .collect::<HashMap<H160, _>>();
-
-    Header {
-        gas_limit: genesis.gas_limit.as_u64(),
-        difficulty: genesis.difficulty.into(),
-        nonce: genesis.nonce.as_u64(),
-        extra_data: genesis.extra_data.0.clone().into(),
-        state_root: genesis_state_root(reth_alloc),
-        timestamp: genesis.timestamp.as_u64(),
-        mix_hash: genesis.mix_hash.0.into(),
-        beneficiary: genesis.coinbase.0.into(),
-        base_fee_per_gas: genesis.config.london_block.map(|_| INITIAL_BASE_FEE),
-        ..Default::default()
-    }
-}
-
-/// Converts an ethers [`GenesisAccount`](ethers_core::utils::GenesisAccount) to a reth
-/// [`GenesisAccount`](reth_primitives::GenesisAccount).
-fn convert_genesis_account(genesis_account: &GenesisAccount) -> reth_primitives::GenesisAccount {
-    reth_primitives::GenesisAccount {
-        balance: genesis_account.balance.into(),
-        nonce: genesis_account.nonce,
-        code: genesis_account.code.as_ref().map(|code| code.0.clone().into()),
-        storage: genesis_account.storage.as_ref().map(|storage| {
-            storage.clone().into_iter().map(|(k, v)| (k.0.into(), v.0.into())).collect()
-        }),
-    }
-}
-
-/// Obtains a [`Header`](reth_primitives::Header) from an ethers
-/// [`Block`](ethers_core::types::Block).
-pub(crate) fn block_to_header(block: Block<ethers_core::types::H256>) -> Header {
-    Header {
-        number: block.number.unwrap().as_u64(),
-        gas_limit: block.gas_limit.as_u64(),
-        difficulty: block.difficulty.into(),
-        nonce: block.nonce.unwrap().to_low_u64_be(),
-        extra_data: block.extra_data.0.into(),
-        state_root: block.state_root.0.into(),
-        timestamp: block.timestamp.as_u64(),
-        mix_hash: block.mix_hash.unwrap().0.into(),
-        beneficiary: block.author.unwrap().0.into(),
-        base_fee_per_gas: block.base_fee_per_gas.map(|fee| fee.as_u64()),
-        ..Default::default()
-    }
-}
-
-/// Obtains a [`ForkId`](reth_primitives::ForkId) from an ethers
-/// [`Genesis`](ethers_core::utils::Genesis).
-fn extract_fork_hash(genesis: &Genesis) -> ForkHash {
-    // first create header and get hash
-    let sealed_header = genesis_header(genesis).seal();
-    let fork_blocks = extract_fork_blocks(genesis);
-    let chain_forkhash =
-        fork_blocks.iter().fold(ForkHash::from(sealed_header.hash()), |acc, block| acc + *block);
-
-    chain_forkhash
-}
-
 /// Obtains an initial [`Status`](reth_eth_wire::Status) from an ethers
 /// [`Genesis`](ethers_core::utils::Genesis).
 ///
 /// Sets the `blockhash` and `genesis` fields to the genesis block hash, and initializes the
 /// `total_difficulty` as zero.
 pub(crate) fn extract_status(genesis: &Genesis) -> Status {
-    let sealed_header = genesis_header(genesis).seal();
-    let chain_forkhash = extract_fork_hash(genesis);
+    let chainspec = ChainSpecification::from(genesis.clone());
+    let chain_forkhash = chainspec.fork_hash();
+    let mut header = Header::from(chainspec.genesis.clone());
+
+    // set initial base fee depending on eip-1559
+    if chainspec.consensus.london_block == 0 {
+        header.base_fee_per_gas = Some(INITIAL_BASE_FEE);
+    }
+
+    // calculate the hash
+    let sealed_header = header.seal();
 
     Status {
         version: EthVersion::Eth67 as u8,
@@ -153,49 +48,30 @@ pub(crate) fn extract_status(genesis: &Genesis) -> Status {
     }
 }
 
-/// Obtains the list of fork block numbers in order from an ethers
-/// [`Genesis`](ethers_core::utils::Genesis).
+/// Converts an ethers [`Block`](ethers_core::types::Block) into a reth
+/// [`SealedHeader`](reth_primitives::SealedHeader).
 ///
-/// This should be the same as [Geth's `gather_forks`
-/// method](https://github.com/ethereum/go-ethereum/blob/6c149fd4ad063f7c24d726a73bc0546badd1bc73/core/forkid/forkid.go#L215).
-fn extract_fork_blocks(genesis: &Genesis) -> Vec<u64> {
-    // will just put each consecutive fork in a vec
-    let mut fork_blocks_opt = vec![
-        genesis.config.homestead_block,
-        genesis.config.dao_fork_block,
-        genesis.config.eip150_block,
-        genesis.config.eip155_block,
-        genesis.config.eip158_block,
-        genesis.config.byzantium_block,
-        genesis.config.constantinople_block,
-        genesis.config.petersburg_block,
-        genesis.config.istanbul_block,
-        genesis.config.muir_glacier_block,
-        genesis.config.berlin_block,
-        genesis.config.london_block,
-        genesis.config.arrow_glacier_block,
-        genesis.config.gray_glacier_block,
-        genesis.config.merge_netsplit_block,
-        genesis.config.shanghai_block,
-        genesis.config.cancun_block,
-    ];
-
-    // filter out the None values
-    fork_blocks_opt.retain(|block| block.is_some());
-
-    // safely use unwrap (the vec is now guaranteed to have no None values)
-    let mut fork_blocks: Vec<u64> = fork_blocks_opt.iter().map(|block| block.unwrap()).collect();
-
-    // Sort the fork block numbers to permit chronological XOR
-    fork_blocks.sort();
-
-    // Deduplicate block numbers applying multiple forks (each block number should only be
-    // represented once)
-    fork_blocks_opt.dedup();
-
-    // Skip any forks in block 0, that's the genesis ruleset
-    fork_blocks.retain(|block| *block != 0);
-    fork_blocks
+/// This cannot be converted into a `From` impl because it contains assumes that the base fee is
+/// [`INITIAL_BASE_FEE`](reth_primitives::INITIAL_BASE_FEE).
+pub(crate) fn block_to_header(block: ethers_core::types::Block<H256>) -> SealedHeader {
+    let header = Header {
+        number: block.number.unwrap().as_u64(),
+        gas_limit: block.gas_limit.as_u64(),
+        difficulty: block.difficulty.into(),
+        nonce: block.nonce.unwrap().to_low_u64_be(),
+        extra_data: block.extra_data.0.into(),
+        state_root: block.state_root.0.into(),
+        timestamp: block.timestamp.as_u64(),
+        mix_hash: block.mix_hash.unwrap().0.into(),
+        beneficiary: block.author.unwrap().0.into(),
+        base_fee_per_gas: block.base_fee_per_gas.map(|fee| fee.as_u64()),
+        ..Default::default()
+    };
+    let hash = match block.hash {
+        Some(hash) => hash.0.into(),
+        None => header.hash_slow(),
+    };
+    SealedHeader::new(header, hash)
 }
 
 /// Creates a chain config using the given chain id.
@@ -390,8 +266,15 @@ impl CliqueGethBuilder {
 pub(crate) struct CliqueGethInstance {
     instance: GethInstance,
     signer: SigningKey,
+
+    /// The [`Status`]
     pub(crate) status: Status,
+
+    /// The local [`Genesis`](ethers_core::utils::Genesis) used to configure geth.
     pub(crate) genesis: Genesis,
+
+    /// The ethers [`SignerMiddleware`](ethers_middleware::signer_middleware::SignerMiddleware)
+    /// set up with the spawned geth instance.
     pub(crate) provider: SignerMiddleware<Provider<Ws>, Wallet<SigningKey>>,
 }
 
@@ -489,12 +372,14 @@ impl CliqueGethInstance {
         self.instance.p2p_port().unwrap()
     }
 
-    /// Returns the [`Geth`](ethers_core::utils::Geth) instance [`PeerId`](reth_primitives::PeerId).
+    /// Returns the [`Geth`](ethers_core::utils::Geth) instance [`PeerId`](reth_primitives::PeerId)
+    /// by calling geth's `admin_nodeInfo`.
     pub(crate) async fn peer_id(&self) -> PeerId {
         enr_to_peer_id(self.provider.node_info().await.unwrap().enr)
     }
 
-    /// Returns the genesis block of the [`Geth`](ethers_core::utils::Geth).
+    /// Returns the genesis block of the [`Geth`](ethers_core::utils::Geth) instance by calling
+    /// geth's `eth_getBlock`.
     pub(crate) async fn genesis(&self) -> Block<H256> {
         self.provider
             .get_block(BlockNumber::Earliest)
@@ -503,7 +388,8 @@ impl CliqueGethInstance {
             .expect("a genesis block should exist")
     }
 
-    /// Returns the chain tip of the [`Geth`](ethers_core::utils::Geth) instance.
+    /// Returns the chain tip of the [`Geth`](ethers_core::utils::Geth) instance by calling
+    /// geth's `eth_getBlock`.
     pub(crate) async fn tip(&self) -> Block<H256> {
         self.provider
             .get_block(BlockNumber::Latest)
@@ -512,12 +398,14 @@ impl CliqueGethInstance {
             .expect("a chain tip should exist")
     }
 
-    /// Returns the chain tip hash of the [`Geth`](ethers_core::utils::Geth) instance.
+    /// Returns the chain tip hash of the [`Geth`](ethers_core::utils::Geth) instance by calling
+    /// from geth's `eth_getBlock`.
     pub(crate) async fn tip_hash(&self) -> reth_primitives::H256 {
         self.tip().await.hash.unwrap().0.into()
     }
 
-    /// Returns the genesis hash of the [`Geth`](ethers_core::utils::Geth) instance.
+    /// Returns the genesis hash of the [`Geth`](ethers_core::utils::Geth) instance by calling
+    /// geth's `eth_getBlock`.
     pub(crate) async fn genesis_hash(&self) -> reth_primitives::H256 {
         self.genesis().await.hash.unwrap().0.into()
     }
