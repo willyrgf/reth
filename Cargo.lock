@@ -4300,25 +4300,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "reth-net-test-utils"
-version = "0.1.0"
-dependencies = [
- "enr 0.7.0",
- "ethers-core",
- "futures",
- "pin-project",
- "rand 0.8.5",
- "reth-eth-wire",
- "reth-network",
- "reth-primitives",
- "reth-provider",
- "secp256k1 0.24.3",
- "tempfile",
- "tokio",
- "tokio-stream",
-]
-
-[[package]]
 name = "reth-network"
 version = "0.1.0"
 dependencies = [
@@ -4348,7 +4329,6 @@ dependencies = [
  "reth-interfaces",
  "reth-metrics-derive",
  "reth-net-common",
- "reth-net-test-utils",
  "reth-network-api",
  "reth-primitives",
  "reth-provider",
@@ -4585,7 +4565,6 @@ dependencies = [
  "reth-eth-wire",
  "reth-executor",
  "reth-interfaces",
- "reth-net-test-utils",
  "reth-network",
  "reth-primitives",
  "reth-provider",

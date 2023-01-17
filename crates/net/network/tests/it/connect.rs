@@ -12,7 +12,7 @@ use reth_interfaces::{
     sync::{SyncState, SyncStateUpdater},
 };
 use reth_net_common::ban_list::BanList;
-use reth_net_test_utils::{
+use reth_network::test_utils::{
     enr_to_peer_id, unused_tcp_udp, NetworkEventStream, PeerConfig, Testnet, GETH_TIMEOUT,
 };
 use reth_network::{NetworkConfig, NetworkEvent, NetworkManager, PeersConfig};

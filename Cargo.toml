@@ -15,7 +15,6 @@ members = [
     "crates/net/nat",
     "crates/net/network-api",
     "crates/net/network",
-    "crates/net/test-utils",
     "crates/net/ipc",
     "crates/net/rpc",
     "crates/net/rpc-api",

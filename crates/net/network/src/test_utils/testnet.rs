@@ -3,7 +3,7 @@
 use futures::{FutureExt, StreamExt};
 use pin_project::pin_project;
 use reth_eth_wire::DisconnectReason;
-use reth_network::{
+use crate::{
     error::NetworkError, eth_requests::EthRequestHandler, NetworkConfig, NetworkEvent,
     NetworkHandle, NetworkManager,
 };
@@ -355,3 +355,4 @@ impl NetworkEventStream {
         }
     }
 }
+

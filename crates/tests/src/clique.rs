@@ -11,7 +11,7 @@ use ethers_signers::{LocalWallet, Signer, Wallet};
 use reth_cli_utils::chainspec::{ChainSpecification, Genesis as RethGenesis};
 use reth_consensus::Config as ConsensusConfig;
 use reth_eth_wire::{EthVersion, Status};
-use reth_net_test_utils::{enr_to_peer_id, unused_port};
+use reth_network::test_utils::{enr_to_peer_id, unused_port};
 use reth_primitives::{
     proofs::genesis_state_root, Chain, ForkHash, ForkId, Header, PeerId, H160, INITIAL_BASE_FEE,
 };
