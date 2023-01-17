@@ -6,14 +6,14 @@ use ethers_core::types::{
     transaction::eip2718::TypedTransaction, Eip1559TransactionRequest, H160, U64,
 };
 use ethers_providers::Middleware;
-use reth_cli_utils::{chainspec::ChainSpecification, init::init_db};
-use reth_consensus::BeaconConsensus;
+use reth_cli_utils::init::init_db;
+use reth_consensus::{constants::EIP1559_INITIAL_BASE_FEE, BeaconConsensus};
 use reth_db::mdbx::{Env, WriteMap};
 use reth_network::{
     test_utils::{unused_tcp_udp, NetworkEventStream, GETH_TIMEOUT},
     NetworkConfig, NetworkManager,
 };
-use reth_primitives::{Header, PeerId, INITIAL_BASE_FEE};
+use reth_primitives::{ChainSpec, Hardfork, Header, PeerId};
 use reth_provider::test_utils::NoopProvider;
 use secp256k1::SecretKey;
 use std::{net::SocketAddr, sync::Arc};
@@ -48,15 +48,18 @@ async fn sync_from_clique_geth() {
         // === check that we have the same genesis hash ===
 
         // get the chainspec from the genesis we configured for geth
-        let chainspec: ChainSpecification = clique_instance.genesis.clone().into();
+        let chainspec: ChainSpec = clique_instance.genesis.clone().into();
         let remote_genesis = block_to_header(clique_instance.genesis().await);
 
-        let mut local_genesis_header = Header::from(chainspec.genesis.clone());
+        let mut local_genesis_header = Header::from(chainspec.genesis().clone());
+
+        let hardforks = chainspec.hardforks();
 
         // set initial base fee depending on eip-1559
-        if chainspec.consensus.london_block == 0 {
-            local_genesis_header.base_fee_per_gas = Some(INITIAL_BASE_FEE);
+        if Some(&0u64) == hardforks.get(&Hardfork::London) {
+            local_genesis_header.base_fee_per_gas = Some(EIP1559_INITIAL_BASE_FEE);
         }
+
 
         let local_genesis = local_genesis_header.seal();
         assert_eq!(local_genesis, remote_genesis, "genesis blocks should match, we computed {local_genesis:#?} but geth computed {remote_genesis:#?}");
@@ -96,7 +99,6 @@ async fn sync_from_clique_geth() {
         let config = NetworkConfig::builder(Arc::new(NoopProvider::default()), secret_key)
             .listener_addr(reth_p2p)
             .discovery_addr(reth_disc)
-            .genesis_hash(local_genesis.hash())
             .status(clique_instance.status)
             .build();
 
@@ -108,13 +110,13 @@ async fn sync_from_clique_geth() {
         let db = Arc::new(init_db(reth_temp_dir.path()).unwrap());
 
         // initialize consensus
-        let consensus = Arc::new(BeaconConsensus::new(chainspec.consensus));
+        let consensus = Arc::new(BeaconConsensus::new(chainspec.clone()));
 
         // build reth and start the pipeline
         let reth: RethTestInstance<Env<WriteMap>> = RethBuilder::new()
             .db(db)
             .consensus(consensus)
-            .genesis(chainspec.genesis)
+            .chain_spec(chainspec)
             .network(handle.clone())
             .tip(tip_hash)
             .build();

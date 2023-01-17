@@ -8,10 +8,10 @@ use ethers_core::{
 use ethers_middleware::SignerMiddleware;
 use ethers_providers::{Middleware, Provider, Ws};
 use ethers_signers::{LocalWallet, Signer, Wallet};
-use reth_cli_utils::chainspec::ChainSpecification;
+use reth_consensus::constants::EIP1559_INITIAL_BASE_FEE;
 use reth_eth_wire::{EthVersion, Status};
 use reth_network::test_utils::{enr_to_peer_id, unused_port};
-use reth_primitives::{Chain, ForkId, Header, PeerId, SealedHeader, INITIAL_BASE_FEE};
+use reth_primitives::{Chain, ChainSpec, Hardfork, Header, PeerId, SealedHeader};
 use std::{
     collections::HashMap,
     io::{BufRead, BufReader},
@@ -26,13 +26,15 @@ use tracing::trace;
 /// Sets the `blockhash` and `genesis` fields to the genesis block hash, and initializes the
 /// `total_difficulty` as zero.
 pub(crate) fn extract_status(genesis: &Genesis) -> Status {
-    let chainspec = ChainSpecification::from(genesis.clone());
-    let chain_forkhash = chainspec.fork_hash();
-    let mut header = Header::from(chainspec.genesis.clone());
+    let chainspec = ChainSpec::from(genesis.clone());
+    let forkid = chainspec.fork_id(0);
+    let mut header = Header::from(chainspec.genesis().clone());
+
+    let hardforks = chainspec.hardforks();
 
     // set initial base fee depending on eip-1559
-    if chainspec.consensus.london_block == 0 {
-        header.base_fee_per_gas = Some(INITIAL_BASE_FEE);
+    if Some(&0u64) == hardforks.get(&Hardfork::London) {
+        header.base_fee_per_gas = Some(EIP1559_INITIAL_BASE_FEE);
     }
 
     // calculate the hash
@@ -44,15 +46,12 @@ pub(crate) fn extract_status(genesis: &Genesis) -> Status {
         total_difficulty: genesis.difficulty.into(),
         blockhash: sealed_header.hash(),
         genesis: sealed_header.hash(),
-        forkid: ForkId { hash: chain_forkhash, next: 0 },
+        forkid,
     }
 }
 
 /// Converts an ethers [`Block`](ethers_core::types::Block) into a reth
 /// [`SealedHeader`](reth_primitives::SealedHeader).
-///
-/// This cannot be converted into a `From` impl because it contains assumes that the base fee is
-/// [`INITIAL_BASE_FEE`](reth_primitives::INITIAL_BASE_FEE).
 pub(crate) fn block_to_header(block: ethers_core::types::Block<H256>) -> SealedHeader {
     let header = Header {
         number: block.number.unwrap().as_u64(),

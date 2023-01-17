@@ -1,13 +1,12 @@
 //! Builder for a reth test instance.
 
-use reth_cli_utils::{chainspec::Genesis, init::init_genesis};
+use reth_cli_utils::init::init_genesis;
 use reth_consensus::BeaconConsensus;
 use reth_db::database::Database;
 use reth_downloaders::{bodies, headers};
-use reth_executor::Config as ExecutorConfig;
 use reth_interfaces::consensus::ForkchoiceState;
 use reth_network::NetworkHandle;
-use reth_primitives::H256;
+use reth_primitives::{ChainSpec, H256};
 use reth_stages::{
     metrics::HeaderMetrics,
     stages::{
@@ -27,7 +26,7 @@ pub(crate) struct RethTestInstance<DB> {
     pub(crate) consensus: Arc<BeaconConsensus>,
     pub(crate) network: NetworkHandle,
     pub(crate) db: Arc<DB>,
-    pub(crate) genesis: Genesis,
+    pub(crate) chain_spec: ChainSpec,
     pub(crate) tip: Option<H256>,
     pub(crate) config: StageConfig,
 }
@@ -39,7 +38,7 @@ where
     /// Start the reth sync pipeline
     pub(crate) async fn start(&self) -> Result<(), RethTestInstanceError> {
         // make sure to init genesis if not done already
-        let _genesis_hash = init_genesis(self.db.clone(), self.genesis.clone())?;
+        let _genesis_hash = init_genesis(self.db.clone(), self.chain_spec.genesis().clone())?;
 
         // start pipeline
         let fetch_client = Arc::new(self.network.fetch_client().await.unwrap());
@@ -77,7 +76,7 @@ where
                 commit_threshold: self.config.sender_recovery.commit_threshold,
             })
             .push(ExecutionStage {
-                config: ExecutorConfig::new_ethereum(),
+                chain_spec: self.chain_spec.clone(),
                 commit_threshold: self.config.execution.commit_threshold,
             });
 
@@ -119,7 +118,7 @@ pub(crate) struct RethBuilder<DB> {
     network: Option<NetworkHandle>,
     consensus: Option<Arc<BeaconConsensus>>,
     db: Option<Arc<DB>>,
-    genesis: Option<Genesis>,
+    chain_spec: Option<ChainSpec>,
     tip: Option<H256>,
     stage_config: Option<StageConfig>,
 }
@@ -131,7 +130,7 @@ impl<DB> RethBuilder<DB> {
             network: None,
             consensus: None,
             db: None,
-            genesis: None,
+            chain_spec: None,
             tip: None,
             stage_config: None,
         }
@@ -160,8 +159,8 @@ impl<DB> RethBuilder<DB> {
 
     /// Sets the genesis block and chain config.
     #[must_use]
-    pub(crate) fn genesis(mut self, genesis: Genesis) -> Self {
-        self.genesis = Some(genesis);
+    pub(crate) fn chain_spec(mut self, chain_spec: ChainSpec) -> Self {
+        self.chain_spec = Some(chain_spec);
         self
     }
 
@@ -186,9 +185,9 @@ impl<DB> RethBuilder<DB> {
             network: self.network.unwrap(),
             consensus: self.consensus.unwrap(),
             db: self.db.unwrap(),
-            genesis: self.genesis.unwrap(),
+            chain_spec: self.chain_spec.unwrap(),
             tip: self.tip,
-            config: self.stage_config.unwrap_or_default(),
+            config: self.stage_config.unwrap(),
         }
     }
 }
