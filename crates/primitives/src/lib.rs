@@ -14,9 +14,11 @@ mod bits;
 mod block;
 pub mod bloom;
 mod chain;
+mod chain_spec;
 mod constants;
 mod error;
 mod forkid;
+mod genesis;
 mod hardfork;
 mod header;
 mod hex_bytes;
@@ -32,13 +34,15 @@ mod transaction;
 /// Helper function for calculating Merkle proofs and hashes
 pub mod proofs;
 
-pub use account::{Account, GenesisAccount};
+pub use account::Account;
 pub use bits::H512;
 pub use block::{Block, BlockHashOrNumber, SealedBlock};
 pub use bloom::Bloom;
 pub use chain::Chain;
 pub use constants::{EMPTY_OMMER_ROOT, INITIAL_BASE_FEE, KECCAK_EMPTY, MAINNET_GENESIS};
+pub use chain_spec::{ChainSpec, ChainSpecBuilder, ParisStatus, GOERLI, MAINNET, SEPOLIA};
 pub use forkid::{ForkFilter, ForkHash, ForkId, ForkTransition, ValidationError};
+pub use genesis::{Genesis, GenesisAccount};
 pub use hardfork::Hardfork;
 pub use header::{Header, HeadersDirection, SealedHeader};
 pub use hex_bytes::Bytes;
