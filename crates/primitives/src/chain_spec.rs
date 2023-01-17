@@ -1,9 +1,12 @@
-use crate::{BlockNumber, Chain, ForkFilter, ForkHash, ForkId, Genesis, Hardfork, H256, U256};
+use crate::{
+    proofs::genesis_state_root, BlockNumber, Chain, ForkFilter, ForkHash, ForkId, Genesis,
+    GenesisAccount, Hardfork, Header, H160, H256, U256,
+};
 use ethers_core::utils::Genesis as EthersGenesis;
 use hex_literal::hex;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// The Etereum mainnet spec
 pub static MAINNET: Lazy<ChainSpec> = Lazy::new(|| ChainSpec {
@@ -155,105 +158,67 @@ impl ChainSpec {
     pub fn builder() -> ChainSpecBuilder {
         ChainSpecBuilder::default()
     }
-
-    // TODO: check if our fork calculation based on chainspec is correct
-    ///// Obtains the list of the config's fork block numbers in order of activation.
-    ///// This only lists forks that were activated by block number, with a notable exception being
-    ///// the merge, also known as Paris.
-    /////
-    ///// This should be the same as [Geth's `gather_forks`
-    ///// method](https://github.com/ethereum/go-ethereum/blob/6c149fd4ad063f7c24d726a73bc0546badd1bc73/core/forkid/forkid.go#L215).
-    // pub fn fork_blocks(&self) -> Vec<BlockNumber> {
-    //     // will just put each consecutive fork in a vec
-    //     let mut fork_blocks_opt: Vec<Option<u64>> = vec![
-    //         self.homestead_block.into(),
-    //         self.dao_fork_block.into(),
-    //         self.eip_150_block.into(),
-    //         self.eip_155_block.into(),
-    //         self.eip_158_block.into(),
-    //         self.byzantium_block.into(),
-    //         self.constantinople_block.into(),
-    //         self.petersburg_block.into(),
-    //         self.istanbul_block.into(),
-    //         self.muir_glacier_block.into(),
-    //         self.berlin_block.into(),
-    //         self.london_block.into(),
-    //         self.arrow_glacier_block.into(),
-    //         self.gray_glacier_block.into(),
-    //         self.merge_netsplit_block,
-    //         // TODO: when cancun time is known
-    //         // self.cancun_time,
-    //         // TODO: when shangai time is known
-    //         // self.shanghai_time,
-    //     ];
-
-    //     // filter out the None values
-    //     fork_blocks_opt.retain(|block| block.is_some());
-
-    //     // SAFETY: it ok to use unwrap because the vec is now guaranteed to have no None values
-    //     let mut fork_blocks: Vec<u64> =
-    //         fork_blocks_opt.iter().map(|block| block.unwrap()).collect();
-
-    //     // Sort the fork block numbers to permit chronological XOR
-    //     fork_blocks.sort();
-
-    //     // Deduplicate block numbers applying multiple forks (each block number should only be
-    //     // represented once)
-    //     fork_blocks_opt.dedup();
-
-    //     // Skip any forks in block 0, that's the genesis ruleset
-    //     fork_blocks.retain(|block| *block != 0);
-    //     fork_blocks
-    // }
 }
 
 impl From<EthersGenesis> for ChainSpec {
-    fn from(_genesis: EthersGenesis) -> Self {
-        // let alloc = genesis
-        //     .alloc
-        //     .iter()
-        //     .map(|(addr, account)| (addr.0.into(), account.clone().into()))
-        //     .collect::<HashMap<H160, GenesisAccount>>();
+    fn from(genesis: EthersGenesis) -> Self {
+        let alloc = genesis
+            .alloc
+            .iter()
+            .map(|(addr, account)| (addr.0.into(), account.clone().into()))
+            .collect::<HashMap<H160, GenesisAccount>>();
 
-        todo!()
-        // Self {
-        //     chain: genesis.config.chain_id.into()
-        //     consensus: reth_consensus::Config {
-        //         chain_id: genesis.config.chain_id,
-        //         homestead_block: genesis.config.homestead_block.unwrap_or_default(),
-        //         dao_fork_block: genesis.config.dao_fork_block.unwrap_or_default(),
-        //         dao_fork_support: genesis.config.dao_fork_support,
-        //         eip_150_block: genesis.config.eip150_block.unwrap_or_default(),
-        //         eip_155_block: genesis.config.eip155_block.unwrap_or_default(),
-        //         eip_158_block: genesis.config.eip158_block.unwrap_or_default(),
-        //         byzantium_block: genesis.config.byzantium_block.unwrap_or_default(),
-        //         petersburg_block: genesis.config.petersburg_block.unwrap_or_default(),
-        //         constantinople_block: genesis.config.constantinople_block.unwrap_or_default(),
-        //         istanbul_block: genesis.config.istanbul_block.unwrap_or_default(),
-        //         muir_glacier_block: genesis.config.muir_glacier_block.unwrap_or_default(),
-        //         berlin_block: genesis.config.berlin_block.unwrap_or_default(),
-        //         london_block: genesis.config.london_block.unwrap_or_default(),
-        //         arrow_glacier_block: genesis.config.arrow_glacier_block.unwrap_or_default(),
-        //         gray_glacier_block: genesis.config.gray_glacier_block.unwrap_or_default(),
-        //         merge_netsplit_block: genesis.config.merge_netsplit_block,
-        //         merge_terminal_total_difficulty: genesis
-        //             .config
-        //             .terminal_total_difficulty
-        //             .unwrap_or_default()
-        //             .as_u128(),
-        //         ..Default::default() // TODO: when paris_block is removed, remove this
-        //     },
-        //     genesis: Genesis {
-        //         nonce: genesis.nonce.as_u64(),
-        //         timestamp: genesis.timestamp.as_u64(),
-        //         gas_limit: genesis.gas_limit.as_u64(),
-        //         difficulty: genesis.difficulty.into(),
-        //         mix_hash: genesis.mix_hash.0.into(),
-        //         coinbase: genesis.coinbase.0.into(),
-        //         extra_data: genesis.extra_data.0.into(),
-        //         alloc,
-        //     },
-        // }
+        let state_root = genesis_state_root(alloc.clone());
+
+        let genesis_block = Genesis {
+            nonce: genesis.nonce.as_u64(),
+            timestamp: genesis.timestamp.as_u64(),
+            gas_limit: genesis.gas_limit.as_u64(),
+            difficulty: genesis.difficulty.into(),
+            mix_hash: genesis.mix_hash.0.into(),
+            coinbase: genesis.coinbase.0.into(),
+            extra_data: genesis.extra_data.0.into(),
+            alloc,
+            state_root,
+        };
+
+        let genesis_hash = Header::from(genesis_block.clone()).seal().hash();
+        let paris_ttd = genesis.config.terminal_total_difficulty.map(|ttd| ttd.into());
+        let hardfork_opts = vec![
+            (Hardfork::Homestead, genesis.config.homestead_block),
+            (Hardfork::Dao, genesis.config.dao_fork_block),
+            (Hardfork::Tangerine, genesis.config.eip150_block),
+            // TODO: eip-158 was also activated when eip-150 was activated, but we don't have the
+            // proper hardfork identifier for it. this breaks the hardfork abstraction slightly
+            (Hardfork::SpuriousDragon, genesis.config.eip155_block),
+            (Hardfork::Byzantium, genesis.config.byzantium_block),
+            (Hardfork::Constantinople, genesis.config.constantinople_block),
+            (Hardfork::Petersburg, genesis.config.petersburg_block),
+            (Hardfork::Istanbul, genesis.config.istanbul_block),
+            (Hardfork::Muirglacier, genesis.config.muir_glacier_block),
+            (Hardfork::Berlin, genesis.config.berlin_block),
+            (Hardfork::London, genesis.config.london_block),
+            (Hardfork::ArrowGlacier, genesis.config.arrow_glacier_block),
+            (Hardfork::GrayGlacier, genesis.config.gray_glacier_block),
+            // TODO: similar problem as eip-158, but with the merge netsplit block. only used in
+            // sepolia, but required for proper forkid generation
+        ];
+
+        let configured_hardforks = hardfork_opts
+            .iter()
+            .filter_map(|(hardfork, opt)| opt.map(|block| (*hardfork, block)))
+            .collect::<BTreeMap<_, _>>();
+
+        Self {
+            chain: genesis.config.chain_id.into(),
+            dao_fork_support: genesis.config.dao_fork_support,
+            genesis: genesis_block,
+            hardforks: configured_hardforks,
+            genesis_hash,
+            paris_ttd,
+            // paris block is not used to fork, and is not used in genesis.json
+            paris_block: None,
+        }
     }
 }
 
