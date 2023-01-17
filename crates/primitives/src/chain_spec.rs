@@ -93,11 +93,6 @@ impl ChainSpec {
         self.genesis_hash
     }
 
-    /// Returns the genesis block
-    pub fn genesis(&self) -> &Genesis {
-        &self.genesis
-    }
-
     /// Returns the supported hardforks and their fork block numbers
     pub fn hardforks(&self) -> &BTreeMap<Hardfork, BlockNumber> {
         &self.hardforks
