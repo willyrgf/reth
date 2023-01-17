@@ -264,10 +264,14 @@ impl CliqueGethBuilder {
 /// This holds a [`SignerMiddleware`](ethers_middleware::signer_middleware::SignerMiddleware) for
 /// enabling block production and creating transactions.
 pub(crate) struct CliqueGethInstance {
+    /// The spawned [`GethInstance`](ethers_core::utils::GethInstance).
     instance: GethInstance,
+
+    /// The private key used for signing clique blocks and transactions.
     signer: SigningKey,
 
-    /// The [`Status`]
+    /// The [`Status`](reth_eth_wire::Status) extracted from the configured geth
+    /// [`Genesis`](ethers_core::utils::Genesis).
     pub(crate) status: Status,
 
     /// The local [`Genesis`](ethers_core::utils::Genesis) used to configure geth.
