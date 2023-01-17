@@ -83,6 +83,11 @@ impl ChainSpec {
         self.chain
     }
 
+    /// Return genesis block
+    pub fn genesis(&self) -> &Genesis {
+        &self.genesis
+    }
+
     /// Returns the chain genesis hash
     pub fn genesis_hash(&self) -> H256 {
         self.genesis_hash
