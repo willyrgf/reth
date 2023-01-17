@@ -43,10 +43,18 @@ pub struct Config {
     pub petersburg_block: BlockNumber,
     /// Istanbul switch block.
     pub istanbul_block: BlockNumber,
+    /// Muir Glacier switch block.
+    pub muir_glacier_block: BlockNumber,
     /// EIP-2728 switch block.
     pub berlin_block: BlockNumber,
     /// EIP-1559 switch block.
     pub london_block: BlockNumber,
+    /// Arrow Glacier switch block.
+    pub arrow_glacier_block: BlockNumber,
+    /// Gray Glacier switch block.
+    pub gray_glacier_block: BlockNumber,
+    /// The Merge Netsplit switch block.
+    pub merge_netsplit_block: Option<BlockNumber>,
     /// The Merge/Paris hard-fork block number.
     pub paris_block: BlockNumber,
     /// Terminal total difficulty after the paris hard-fork to reach before The Merge is considered
@@ -69,10 +77,14 @@ impl Default for Config {
             constantinople_block: 7280000,
             petersburg_block: 7280000,
             istanbul_block: 9069000,
+            muir_glacier_block: 9200000,
             berlin_block: 12244000,
             london_block: 12965000,
+            arrow_glacier_block: 13773000,
+            gray_glacier_block: 15050000,
             paris_block: 15537394,
             merge_terminal_total_difficulty: 58750000000000000000000,
+            merge_netsplit_block: None,
         }
     }
 }
@@ -96,5 +108,57 @@ impl From<&Config> for ExecutorConfig {
                 shanghai: u64::MAX, // TODO: change once known
             },
         }
+    }
+}
+
+impl Config {
+    /// Obtains the list of the config's fork block numbers in order of activation.
+    /// This only lists forks that were activated by block number, with a notable exception being
+    /// the merge, also known as Paris.
+    ///
+    /// This should be the same as [Geth's `gather_forks`
+    /// method](https://github.com/ethereum/go-ethereum/blob/6c149fd4ad063f7c24d726a73bc0546badd1bc73/core/forkid/forkid.go#L215).
+    pub fn fork_blocks(&self) -> Vec<BlockNumber> {
+        // will just put each consecutive fork in a vec
+        // do NOT put paris into this vec, as it was not activated by block number.
+        let mut fork_blocks_opt: Vec<Option<u64>> = vec![
+            self.homestead_block.into(),
+            self.dao_fork_block.into(),
+            self.eip_150_block.into(),
+            self.eip_155_block.into(),
+            self.eip_158_block.into(),
+            self.byzantium_block.into(),
+            self.constantinople_block.into(),
+            self.petersburg_block.into(),
+            self.istanbul_block.into(),
+            self.muir_glacier_block.into(),
+            self.berlin_block.into(),
+            self.london_block.into(),
+            self.arrow_glacier_block.into(),
+            self.gray_glacier_block.into(),
+            self.merge_netsplit_block,
+            // TODO: when cancun time is known
+            // self.cancun_time,
+            // TODO: when shangai time is known
+            // self.shanghai_time,
+        ];
+
+        // filter out the None values
+        fork_blocks_opt.retain(|block| block.is_some());
+
+        // safely use unwrap (the vec is now guaranteed to have no None values)
+        let mut fork_blocks: Vec<u64> =
+            fork_blocks_opt.iter().map(|block| block.unwrap()).collect();
+
+        // Sort the fork block numbers to permit chronological XOR
+        fork_blocks.sort();
+
+        // Deduplicate block numbers applying multiple forks (each block number should only be
+        // represented once)
+        fork_blocks_opt.dedup();
+
+        // Skip any forks in block 0, that's the genesis ruleset
+        fork_blocks.retain(|block| *block != 0);
+        fork_blocks
     }
 }
