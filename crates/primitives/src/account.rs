@@ -6,6 +6,7 @@ use crate::{
     Bytes, H256, KECCAK_EMPTY, U256,
 };
 use bytes::BytesMut;
+use ethers_core::utils::GenesisAccount as EthersGenesisAccount;
 use reth_codecs::{main_codec, Compact};
 use reth_rlp::{length_of_length, Encodable, Header};
 use serde::{Deserialize, Serialize};
@@ -87,6 +88,19 @@ impl Account {
     /// Whether the account has bytecode.
     pub fn has_bytecode(&self) -> bool {
         self.bytecode_hash.is_some()
+    }
+}
+
+impl From<EthersGenesisAccount> for GenesisAccount {
+    fn from(genesis_account: EthersGenesisAccount) -> Self {
+        Self {
+            balance: genesis_account.balance.into(),
+            nonce: genesis_account.nonce,
+            code: genesis_account.code.as_ref().map(|code| code.0.clone().into()),
+            storage: genesis_account.storage.as_ref().map(|storage| {
+                storage.clone().into_iter().map(|(k, v)| (k.0.into(), v.0.into())).collect()
+            }),
+        }
     }
 }
 
