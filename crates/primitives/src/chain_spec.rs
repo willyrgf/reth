@@ -1,9 +1,9 @@
+use crate::{BlockNumber, Chain, ForkFilter, ForkHash, ForkId, Genesis, Hardfork, H256, U256};
+use ethers_core::utils::Genesis as EthersGenesis;
 use hex_literal::hex;
 use once_cell::sync::Lazy;
-use std::collections::BTreeMap;
-use ethers_core::utils::Genesis as EthersGenesis;
 use serde::{Deserialize, Serialize};
-use crate::{BlockNumber, Chain, ForkFilter, ForkHash, ForkId, Genesis, Hardfork, H256, U256};
+use std::collections::BTreeMap;
 
 /// The Etereum mainnet spec
 pub static MAINNET: Lazy<ChainSpec> = Lazy::new(|| ChainSpec {
@@ -246,7 +246,6 @@ impl From<EthersGenesis> for ChainSpec {
         // }
     }
 }
-
 
 /// A helper to build custom chain specs
 #[derive(Debug, Default)]

@@ -7,6 +7,6 @@
 
 //! Integration tests and test helpers for reth.
 mod clique;
-mod sync;
 mod reth_builder;
 mod stage_config;
+mod sync;

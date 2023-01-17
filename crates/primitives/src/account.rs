@@ -1,6 +1,4 @@
-use crate::{
-    H256, U256,
-};
+use crate::{H256, U256};
 use reth_codecs::{main_codec, Compact};
 
 /// An Ethereum account.
