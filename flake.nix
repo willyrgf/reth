@@ -91,7 +91,7 @@
           pname = "mdbx-tools";
           version = "0.1.0"; # Placeholder version
           src = ./crates/storage/libmdbx-rs/mdbx-sys/libmdbx;
-          nativeBuildInputs = with pkgs; [ make gcc ];
+          nativeBuildInputs = with pkgs; [ gnumake gcc ];
           # Silence benchmark message as in Makefile
           makeFlags = [ "IOARENA=1" "tools" ];
           installPhase = ''
@@ -131,10 +131,10 @@
             self.packages.${system}.mdbx-tools
           ];
 
-          # Use the same nativeBuildInputs as the build itself
-          nativeBuildInputs = commonArgs.nativeBuildInputs;
+          # Use the same nativeBuildInputs as the build itself, plus shell-specific tools
+          nativeBuildInputs = commonArgs.nativeBuildInputs ++ (with pkgs; [ cargo-nextest ]);
 
-          buildInputs = commonArgs.buildInputs ++ (with pkgs; [
+          buildInputs = with pkgs; commonArgs.buildInputs ++ [
             # Rust toolchain components
             rustToolchain
 
@@ -151,15 +151,15 @@
 
             # Tools for EF tests (might need specific libs/tools)
             wget
-            tar
+            gnutar
 
             # Tools for coverage
-            llvm-tools # for llvm-cov
-            cargo-nextest
+            # llvmPackages.tools # for llvm-cov - Temporarily removed for debugging shell error
+            # cargo-nextest moved to nativeBuildInputs
 
             # Tools for cross-compilation (if desired in shell)
             # cross
-          ]);
+          ];
 
           # Environment variables for development
           RUST_SRC_PATH = "${rustToolchain}/lib/rustlib/src/rust/library";
@@ -192,19 +192,27 @@
         # Add checks (optional, can be slow)
         checks = {
           # Check formatting
-          formatting =
-            pkgs.runCommand "fmt-check" { buildInputs = [ pkgs.dprint ]; } ''
-              ${pkgs.dprint}/bin/dprint check
-              touch $out
-            '';
+          formatting = pkgs.runCommand "fmt-check" {
+            nativeBuildInputs = [ pkgs.dprint ];
+            src = commonArgs.src; # dprint needs access to source and dprint.json
+          } ''
+            export HOME=$(pwd) # Set HOME to a writable directory for dprint cache
+            cd $src
+            ${pkgs.dprint}/bin/dprint check
+            touch $out
+          '';
 
           # Run clippy (matches clippy target)
           clippy = pkgs.runCommand "clippy-check" {
-            nativeBuildInputs = [ rustToolchain ]
+            nativeBuildInputs = [ rustToolchain pkgs.cacert ] # Add cacert for network access
               ++ commonArgs.nativeBuildInputs;
             buildInputs = commonArgs.buildInputs;
             src = commonArgs.src;
           } ''
+            export CARGO_HOME=$(pwd)/.cargo # Set CARGO_HOME to writable path
+            # CARGO_TARGET_DIR needs to be set after cd to be relative to src
+            cd $src
+            export CARGO_TARGET_DIR=../target # Point back to writable build root target dir
             export RUST_SRC_PATH="${rustToolchain}/lib/rustlib/src/rust/library"
             cargo clippy --all-targets --all-features -- -D warnings
             touch $out
@@ -214,11 +222,16 @@
           # Note: EF tests are complex and likely require network/external data,
           # often skipped in basic Nix checks.
           unit-tests = pkgs.runCommand "unit-tests" {
-            nativeBuildInputs = with pkgs;
-              [ rustToolchain cargo-nextest ] ++ commonArgs.nativeBuildInputs;
+            nativeBuildInputs = with pkgs; # Add cacert for network access
+              [ rustToolchain cargo-nextest cacert ] ++ commonArgs.nativeBuildInputs;
             buildInputs = commonArgs.buildInputs;
             src = commonArgs.src;
           } ''
+            export CARGO_HOME=$(pwd)/.cargo # Set CARGO_HOME to writable path
+            # CARGO_TARGET_DIR needs to be set after cd to be relative to src
+            cd $src
+            export CARGO_TARGET_DIR=../target # Point back to writable build root target dir
+            export NEXTEST_TARGET_DIR=../target/nextest # Explicitly set nextest target dir
             export RUST_SRC_PATH="${rustToolchain}/lib/rustlib/src/rust/library"
             # Using cargo nextest as in Makefile
             cargo nextest run --locked --workspace --features 'jemalloc-prof' -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'
@@ -230,6 +243,7 @@
             nativeBuildInputs = [ pkgs.codespell ];
             src = commonArgs.src;
           } ''
+            cd $src
             ${pkgs.codespell}/bin/codespell --skip "*.json,./testing/ef-tests/ethereum-tests"
             touch $out
           '';
