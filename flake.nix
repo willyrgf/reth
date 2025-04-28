@@ -232,32 +232,19 @@
             touch $out
           '';
 
-          # Run tests (matches test-unit, but uses cargo test/nextest)
-          # Note: EF tests are complex and likely require network/external data,
-          # often skipped in basic Nix checks or run separately.
-          unit-tests = pkgs.runCommand "unit-tests" {
-            nativeBuildInputs = with pkgs; # Add cacert for network access
-              [ rustToolchain cargo-nextest cacert ] ++ commonArgs.nativeBuildInputs;
-            buildInputs = commonArgs.buildInputs;
-            # Pass src directly to runCommand environment
-            src = commonArgs.src;
-          } ''
-            # Set CARGO_HOME and RUSTUP_HOME to writable directories
-            export CARGO_HOME=$(mktemp -d)
-            export RUSTUP_HOME=$(mktemp -d)
-            # Store the writable build root (current directory)
-            BUILD_ROOT=$(pwd)
-            # Change to the source directory
-            cd $src
-            # Ensure RUST_SRC_PATH is set
-            export RUST_SRC_PATH="${rustToolchain}/lib/rustlib/src/rust/library"
-            # Using cargo nextest as in Makefile, explicitly setting target dir
+          # Run tests using craneLib.cargoNextest
+          unit-tests = craneLib.cargoNextest (commonArgs // {
+            inherit cargoArtifacts;
+            # Add cargo-nextest and cacert to nativeBuildInputs
+            # craneLib might add cargo-nextest automatically, but being explicit is safe.
+            nativeBuildInputs = commonArgs.nativeBuildInputs ++ [ pkgs.cargo-nextest pkgs.cacert ];
+            # Arguments for cargo nextest run
             # Exclude benchmarks, run other tests. Removed problematic 'jemalloc-prof' feature for check.
             # If specific features ARE needed for tests, add them back with --features flag.
-            cargo nextest run --target-dir $BUILD_ROOT/target --locked --workspace -E 'kind(bench)'
-            # Create the output file expected by Nix
-            touch $out
-          '';
+            cargoNextestExtraArgs = "--locked --workspace -E 'kind(bench)'";
+            # Override pname for clarity in logs
+            pname = "reth-unit-tests";
+          });
 
           # Check for spelling errors (matches lint-codespell)
           codespell = pkgs.runCommand "codespell-check" {
