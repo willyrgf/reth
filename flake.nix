@@ -209,12 +209,14 @@
             buildInputs = commonArgs.buildInputs;
             src = commonArgs.src;
           } ''
-            export CARGO_HOME=$(pwd)/.cargo # Set CARGO_HOME to writable path
-            # CARGO_TARGET_DIR needs to be set after cd to be relative to src
+            # Store the writable build root
+            BUILD_ROOT=$(pwd)
+            export CARGO_HOME=$BUILD_ROOT/.cargo # Set CARGO_HOME to writable path
+            # Change to the source directory
             cd $src
-            export CARGO_TARGET_DIR=../target # Point back to writable build root target dir
             export RUST_SRC_PATH="${rustToolchain}/lib/rustlib/src/rust/library"
-            cargo clippy --all-targets --all-features -- -D warnings
+            # Explicitly set target dir for clippy
+            cargo clippy --target-dir $BUILD_ROOT/target --all-targets --all-features -- -D warnings
             touch $out
           '';
 
@@ -227,14 +229,14 @@
             buildInputs = commonArgs.buildInputs;
             src = commonArgs.src;
           } ''
-            export CARGO_HOME=$(pwd)/.cargo # Set CARGO_HOME to writable path
-            # CARGO_TARGET_DIR needs to be set after cd to be relative to src
+            # Store the writable build root
+            BUILD_ROOT=$(pwd)
+            export CARGO_HOME=$BUILD_ROOT/.cargo # Set CARGO_HOME to writable path
+            # Change to the source directory
             cd $src
-            export CARGO_TARGET_DIR=../target # Point back to writable build root target dir
-            export NEXTEST_TARGET_DIR=../target/nextest # Explicitly set nextest target dir
             export RUST_SRC_PATH="${rustToolchain}/lib/rustlib/src/rust/library"
-            # Using cargo nextest as in Makefile
-            cargo nextest run --locked --workspace --features 'jemalloc-prof' -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'
+            # Using cargo nextest as in Makefile, explicitly setting target dir
+            cargo nextest run --target-dir $BUILD_ROOT/target --locked --workspace --features 'jemalloc-prof' -E 'kind(lib)' -E 'kind(bin)' -E 'kind(proc-macro)'
             touch $out
           '';
 
